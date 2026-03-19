@@ -21,5 +21,7 @@ data class UserPreferenceEntity(
         const val KEY_EXPORT_WITH_INSIGHTS = "export_with_insights"
         const val KEY_CONVERSATION_ID = "active_conversation_id"
         const val KEY_FONT_SIZE = "font_size"
+        /** Remote-config kill-switch: when false, all premium features are disabled. */
+        const val KEY_PREMIUM_FEATURES_GLOBALLY_ENABLED = "premium_features_globally_enabled"
     }
 }

@@ -33,12 +33,38 @@ val BackgroundDark   = Color(0xFF1C1B1F)
 val SurfaceLight     = Color(0xFFFFFBFE)
 val SurfaceDark      = Color(0xFF1C1B1F)
 
+// ── NeoPOP / CRED Design Palette ─────────────────────────────────────────────
+// Deep dark backgrounds — near-black with rich blue-black depth
+val NeoBg0          = Color(0xFF060A14)   // Deepest black-blue
+val NeoBg1          = Color(0xFF0D1117)   // Primary dark canvas
+val NeoBg2          = Color(0xFF151B28)   // Raised surface
+val NeoBg3          = Color(0xFF1E2533)   // Card surface
+
+// Electric accent colors
+val NeonPurple      = Color(0xFF9B5DE5)   // CRED signature purple
+val NeonPurpleLight = Color(0xFFBB86FC)   // Lighter purple for text
+val NeonCyan        = Color(0xFF00F5D4)   // Electric teal/cyan
+val NeonGold        = Color(0xFFFFD166)   // Warm gold accent
+val NeonRose        = Color(0xFFFF6B9D)   // Rose/pink accent
+
+// Glassmorphism surface colors (alpha-encoded for overlay use)
+val GlassWhite      = Color(0x1AFFFFFF)   // 10% white glass
+val GlassBorder     = Color(0x33FFFFFF)   // 20% white border
+val GlassDark       = Color(0x99000000)   // 60% black glass
+val GlassCard       = Color(0x26FFFFFF)   // 15% white card
+
+// Gradient anchor colors
+val GradStart       = Color(0xFF0A0E1A)   // Gradient start (deep navy)
+val GradMid1        = Color(0xFF120E2B)   // Gradient midpoint (indigo dark)
+val GradMid2        = Color(0xFF0E1A2B)   // Gradient midpoint (teal dark)
+val GradEnd         = Color(0xFF070D18)   // Gradient end
+
 // ── Pro Theme Palette ───────────────────────────────────────────────────────
-val ProPurple = Color(0xFF8B5CF6)
-val ProBlue = Color(0xFF38BDF8)
-val ProAqua = Color(0xFF22D3EE)
-val ProBackgroundDark = Color(0xFF0B1020)
-val ProSurfaceDark = Color(0xCC111827)
+val ProPurple = Color(0xFF9B5DE5)
+val ProBlue   = Color(0xFF00F5D4)
+val ProAqua   = Color(0xFF00BBF9)
+val ProBackgroundDark  = Color(0xFF060A14)
+val ProSurfaceDark     = Color(0xCC0D1117)
 val ProBackgroundLight = Color(0xFFF3F4F6)
-val ProSurfaceLight = Color(0xCCFFFFFF)
+val ProSurfaceLight    = Color(0xCCFFFFFF)
 

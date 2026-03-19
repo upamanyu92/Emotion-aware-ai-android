@@ -98,6 +98,20 @@ class MemoryManager @Inject constructor(
     suspend fun setExportWithInsightsEnabled(enabled: Boolean) =
         savePreference(UserPreferenceEntity.KEY_EXPORT_WITH_INSIGHTS, enabled.toString())
 
+    /** Returns whether premium features are globally enabled (remote kill-switch). Defaults true. */
+    suspend fun isPremiumFeaturesGloballyEnabled(): Boolean =
+        getPreference(
+            UserPreferenceEntity.KEY_PREMIUM_FEATURES_GLOBALLY_ENABLED,
+            "true"
+        ).toBoolean()
+
+    /** Updates the remote kill-switch value locally (e.g. after fetching remote config). */
+    suspend fun setPremiumFeaturesGloballyEnabled(enabled: Boolean) =
+        savePreference(
+            UserPreferenceEntity.KEY_PREMIUM_FEATURES_GLOBALLY_ENABLED,
+            enabled.toString()
+        )
+
     /**
      * Returns the dominant emotion across the last [limit] user messages.
      */

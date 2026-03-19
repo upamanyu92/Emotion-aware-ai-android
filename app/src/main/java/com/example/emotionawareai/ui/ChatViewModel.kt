@@ -118,9 +118,18 @@ class ChatViewModel @Inject constructor(
     private val _exportPayload = MutableStateFlow<String?>(null)
     val exportPayload: StateFlow<String?> = _exportPayload.asStateFlow()
 
-    private val _premiumFeatureMatrix = MutableStateFlow(buildPremiumMatrix(false))
+    private val _premiumFeatureMatrix = MutableStateFlow(buildPremiumMatrix(true))
     val premiumFeatureMatrix: StateFlow<Map<PremiumFeature, Boolean>> =
         _premiumFeatureMatrix.asStateFlow()
+
+    /**
+     * Remote kill-switch for all premium features.
+     * Defaults to [true] so every user gets free access to all features.
+     * Can be set to [false] via [setPremiumFeaturesEnabled] to re-gate features remotely.
+     */
+    private val _premiumFeaturesGloballyEnabled = MutableStateFlow(true)
+    val premiumFeaturesGloballyEnabled: StateFlow<Boolean> =
+        _premiumFeaturesGloballyEnabled.asStateFlow()
 
     private var generationJob: Job? = null
     private var messageIdCounter = 0L
@@ -152,7 +161,10 @@ class ChatViewModel @Inject constructor(
         _isPremiumUser.update { memoryManager.isPremiumUnlocked() }
         _isProThemeEnabled.update { memoryManager.isProThemeEnabled() }
         _isExportWithInsights.update { memoryManager.isExportWithInsightsEnabled() }
-        _premiumFeatureMatrix.update { buildPremiumMatrix(_isPremiumUser.value) }
+        val globallyEnabled = memoryManager.isPremiumFeaturesGloballyEnabled()
+        _premiumFeaturesGloballyEnabled.update { globallyEnabled }
+        // Grant all features for free; respect the remote kill-switch if off.
+        _premiumFeatureMatrix.update { buildPremiumMatrix(globallyEnabled) }
 
         viewModelScope.launch(Dispatchers.IO) {
             val loaded = responseEngine.loadModel()
@@ -233,7 +245,9 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             billingManager.isPremium.collect { premium ->
                 _isPremiumUser.update { premium }
-                _premiumFeatureMatrix.update { buildPremiumMatrix(premium) }
+                // Feature matrix is driven by the global kill-switch, not billing state.
+                // All features remain free; billing state is tracked for future use.
+                _premiumFeatureMatrix.update { buildPremiumMatrix(_premiumFeaturesGloballyEnabled.value) }
                 memoryManager.setPremiumUnlocked(premium)
             }
         }
@@ -357,8 +371,8 @@ class ChatViewModel @Inject constructor(
     }
 
     fun toggleContinuousConversation() {
-        if (!_isPremiumUser.value) {
-            _errorMessage.update { "Live conversation is a Premium feature. Upgrade to unlock." }
+        if (!hasPremiumFeature(PremiumFeature.CONTINUOUS_CONVERSATION)) {
+            _errorMessage.update { "Live conversation features are currently disabled." }
             return
         }
 
@@ -389,7 +403,7 @@ class ChatViewModel @Inject constructor(
 
     fun toggleProTheme() {
         if (!hasPremiumFeature(PremiumFeature.PRO_THEMES)) {
-            _errorMessage.update { "Pro themes are available in Premium." }
+            _errorMessage.update { "Pro themes are currently disabled." }
             return
         }
         val enabled = !_isProThemeEnabled.value
@@ -409,7 +423,7 @@ class ChatViewModel @Inject constructor(
 
     fun prepareExportPayload() {
         if (!hasPremiumFeature(PremiumFeature.EXPORT_CHAT)) {
-            _errorMessage.update { "Export is a Premium feature. Upgrade to unlock." }
+            _errorMessage.update { "Export is currently disabled." }
             return
         }
 
@@ -527,16 +541,26 @@ class ChatViewModel @Inject constructor(
         return _premiumFeatureMatrix.value[feature] == true
     }
 
-    private fun buildPremiumMatrix(isPremium: Boolean): Map<PremiumFeature, Boolean> {
-        return PremiumFeature.entries.associateWith { feature ->
-            when (feature) {
-                PremiumFeature.ADVANCED_TONE_INSIGHTS,
-                PremiumFeature.PRO_THEMES,
-                PremiumFeature.LONG_MEMORY,
-                PremiumFeature.EXPORT_CHAT,
-                PremiumFeature.CONTINUOUS_CONVERSATION -> isPremium
-            }
+    /**
+     * Remotely enables or disables all premium features for every installed instance.
+     * When [enabled] is `true` (default), every user gets free access to all features.
+     * Setting it to `false` re-gates them, acting as a remote kill-switch.
+     */
+    fun setPremiumFeaturesEnabled(enabled: Boolean) {
+        _premiumFeaturesGloballyEnabled.update { enabled }
+        _premiumFeatureMatrix.update { buildPremiumMatrix(enabled) }
+        viewModelScope.launch {
+            memoryManager.setPremiumFeaturesGloballyEnabled(enabled)
         }
+    }
+
+    /**
+     * Builds the premium feature access map.
+     * When [featuresEnabled] is true all features are granted (free-for-all mode).
+     * When false, all features are disabled (remote kill-switch).
+     */
+    private fun buildPremiumMatrix(featuresEnabled: Boolean): Map<PremiumFeature, Boolean> {
+        return PremiumFeature.entries.associateWith { featuresEnabled }
     }
 
     override fun onCleared() {
