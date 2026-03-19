@@ -1,11 +1,14 @@
 package com.example.emotionawareai.ui
 
+import android.graphics.Bitmap
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.emotionawareai.domain.model.ActivityCaption
 import com.example.emotionawareai.domain.model.ChatMessage
 import com.example.emotionawareai.domain.model.Emotion
 import com.example.emotionawareai.domain.model.MessageRole
+import com.example.emotionawareai.engine.ActivityAnalyzer
 import com.example.emotionawareai.engine.EmotionDetector
 import com.example.emotionawareai.manager.ConversationManager
 import com.example.emotionawareai.manager.MemoryManager
@@ -28,6 +31,7 @@ class ChatViewModel @Inject constructor(
     private val conversationManager: ConversationManager,
     private val responseEngine: ResponseEngine,
     private val emotionDetector: EmotionDetector,
+    private val activityAnalyzer: ActivityAnalyzer,
     private val voiceProcessor: VoiceProcessor,
     private val memoryManager: MemoryManager
 ) : ViewModel() {
@@ -39,6 +43,9 @@ class ChatViewModel @Inject constructor(
 
     private val _currentEmotion = MutableStateFlow(Emotion.NEUTRAL)
     val currentEmotion: StateFlow<Emotion> = _currentEmotion.asStateFlow()
+
+    private val _activityCaptions = MutableStateFlow<List<ActivityCaption>>(emptyList())
+    val activityCaptions: StateFlow<List<ActivityCaption>> = _activityCaptions.asStateFlow()
 
     private val _isListening = MutableStateFlow(false)
     val isListening: StateFlow<Boolean> = _isListening.asStateFlow()
@@ -70,6 +77,7 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             initializeSession()
             observeEmotionDetection()
+            observeActivityCaptions()
             observeVoiceRecognition()
         }
     }
@@ -95,6 +103,14 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             emotionDetector.emotionFlow.collect { emotion ->
                 _currentEmotion.update { emotion }
+            }
+        }
+    }
+
+    private fun observeActivityCaptions() {
+        viewModelScope.launch {
+            activityAnalyzer.captionFlow.collect { captions ->
+                _activityCaptions.update { captions }
             }
         }
     }
@@ -213,7 +229,18 @@ class ChatViewModel @Inject constructor(
 
         if (cameraGranted) {
             emotionDetector.initialize()
+            activityAnalyzer.initialize()
         }
+    }
+
+    /**
+     * Called by the camera analysis callback with each decoded frame bitmap.
+     * Routes the shared bitmap to both [EmotionDetector] and [ActivityAnalyzer].
+     * Each analyzer applies its own rate-limiting internally.
+     */
+    fun onCameraFrame(bitmap: Bitmap) {
+        emotionDetector.processBitmapFrame(bitmap)
+        activityAnalyzer.processBitmapFrame(bitmap)
     }
 
     fun clearError() {
@@ -261,6 +288,7 @@ class ChatViewModel @Inject constructor(
         super.onCleared()
         responseEngine.release()
         emotionDetector.release()
+        activityAnalyzer.release()
         voiceProcessor.release()
     }
 

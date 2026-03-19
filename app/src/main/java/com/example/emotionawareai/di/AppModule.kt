@@ -6,6 +6,7 @@ import com.example.emotionawareai.data.database.AppDatabase
 import com.example.emotionawareai.data.database.ConversationDao
 import com.example.emotionawareai.data.database.UserPreferenceDao
 import com.example.emotionawareai.domain.repository.ConversationRepository
+import com.example.emotionawareai.engine.ActivityAnalyzer
 import com.example.emotionawareai.engine.EmotionDetector
 import com.example.emotionawareai.engine.LLMEngine
 import com.example.emotionawareai.manager.ConversationManager
@@ -63,6 +64,12 @@ object AppModule {
     fun provideEmotionDetector(
         @ApplicationContext context: Context
     ): EmotionDetector = EmotionDetector(context)
+
+    @Provides
+    @Singleton
+    fun provideActivityAnalyzer(
+        @ApplicationContext context: Context
+    ): ActivityAnalyzer = ActivityAnalyzer(context)
 
     @Provides
     @Singleton

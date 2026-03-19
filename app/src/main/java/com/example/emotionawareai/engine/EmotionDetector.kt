@@ -1,6 +1,7 @@
 package com.example.emotionawareai.engine
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.util.Log
 import androidx.camera.core.ImageProxy
 import com.example.emotionawareai.domain.model.Emotion
@@ -73,8 +74,8 @@ class EmotionDetector @Inject constructor(
     }
 
     /**
-     * Processes a CameraX [ImageProxy] frame. Frames arriving faster than
-     * [MAX_FPS] are dropped to save battery.
+     * Processes a CameraX [ImageProxy] frame. Converts to [Bitmap] and
+     * delegates to [processBitmapFrame]. The proxy is closed by this method.
      */
     @androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
     fun processFrame(imageProxy: ImageProxy) {
@@ -91,18 +92,39 @@ class EmotionDetector @Inject constructor(
             return
         }
 
+        val bitmap = imageProxy.toBitmap()
+        imageProxy.close()
+        processBitmapFrameInternal(bitmap, landmarker, recycleAfter = true)
+    }
+
+    /**
+     * Processes a [Bitmap] that is shared with other analyzers (e.g.
+     * [ActivityAnalyzer]). The caller owns the bitmap lifecycle — this method
+     * does **not** recycle it.
+     */
+    fun processBitmapFrame(bitmap: Bitmap) {
+        val nowMs = System.currentTimeMillis()
+        if (nowMs - lastProcessedMs < FRAME_INTERVAL_MS) return
+        lastProcessedMs = nowMs
+        val landmarker = faceLandmarker ?: return
+        processBitmapFrameInternal(bitmap, landmarker, recycleAfter = false)
+    }
+
+    private fun processBitmapFrameInternal(
+        bitmap: Bitmap,
+        landmarker: FaceLandmarker,
+        recycleAfter: Boolean
+    ) {
         analysisExecutor.execute {
             runCatching {
-                val bitmap = imageProxy.toBitmap()
                 val mpImage = BitmapImageBuilder(bitmap).build()
                 val result: FaceLandmarkerResult = landmarker.detect(mpImage)
                 val emotion = classifyEmotion(result)
                 _emotionFlow.tryEmit(emotion)
-                bitmap.recycle()
             }.onFailure { e ->
                 Log.e(TAG, "Frame processing error: ${e.message}")
             }
-            imageProxy.close()
+            if (recycleAfter && !bitmap.isRecycled) bitmap.recycle()
         }
     }
 

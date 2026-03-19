@@ -71,6 +71,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.emotionawareai.engine.EmotionDetector
 import com.example.emotionawareai.ui.ChatViewModel
+import com.example.emotionawareai.ui.component.ActivityCaptionOverlay
 import com.example.emotionawareai.ui.component.EmotionIndicator
 import com.example.emotionawareai.ui.component.MessageBubble
 import com.example.emotionawareai.ui.component.VoiceInputButton
@@ -82,6 +83,7 @@ import java.util.concurrent.Executors
 fun ChatScreen(viewModel: ChatViewModel) {
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val currentEmotion by viewModel.currentEmotion.collectAsStateWithLifecycle()
+    val activityCaptions by viewModel.activityCaptions.collectAsStateWithLifecycle()
     val isListening by viewModel.isListening.collectAsStateWithLifecycle()
     val isGenerating by viewModel.isGenerating.collectAsStateWithLifecycle()
     val isModelLoaded by viewModel.isModelLoaded.collectAsStateWithLifecycle()
