@@ -38,10 +38,12 @@ class ConversationManager @Inject constructor(
      */
     suspend fun buildContext(
         userMessage: String,
-        emotion: Emotion
+        emotion: Emotion,
+        audioToneEmotion: Emotion = Emotion.UNKNOWN,
+        historyLimit: Int = 6
     ): ConversationContext = withContext(Dispatchers.IO) {
         val convId = ensureConversation()
-        val history = repository.getRecentMessages(convId, limit = 6)
+        val history = repository.getRecentMessages(convId, limit = historyLimit)
         val styleString = repository.getPreference(
             UserPreferenceEntity.KEY_RESPONSE_STYLE,
             ResponseStyle.EMPATHETIC.name
@@ -53,6 +55,7 @@ class ConversationManager @Inject constructor(
             conversationId = convId,
             userMessage = userMessage,
             detectedEmotion = emotion,
+            audioToneEmotion = audioToneEmotion,
             recentHistory = history,
             systemStyle = style
         )

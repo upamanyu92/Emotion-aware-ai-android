@@ -1,5 +1,6 @@
 package com.example.emotionawareai.ui
 
+import android.app.Activity
 import android.graphics.Bitmap
 import android.util.Log
 import androidx.lifecycle.ViewModel
@@ -8,16 +9,23 @@ import com.example.emotionawareai.domain.model.ActivityCaption
 import com.example.emotionawareai.domain.model.ChatMessage
 import com.example.emotionawareai.domain.model.Emotion
 import com.example.emotionawareai.domain.model.MessageRole
+import com.example.emotionawareai.billing.BillingManager
+import com.example.emotionawareai.billing.PremiumOffer
+import com.example.emotionawareai.billing.PremiumPlanType
+import com.example.emotionawareai.domain.model.PremiumFeature
 import com.example.emotionawareai.engine.ActivityAnalyzer
 import com.example.emotionawareai.engine.EmotionDetector
 import com.example.emotionawareai.manager.ConversationManager
 import com.example.emotionawareai.manager.MemoryManager
 import com.example.emotionawareai.manager.ResponseEngine
+import com.example.emotionawareai.voice.AudioToneAnalyzer
+import com.example.emotionawareai.voice.ToneInsight
 import com.example.emotionawareai.voice.VoiceError
 import com.example.emotionawareai.voice.VoiceProcessor
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,7 +41,9 @@ class ChatViewModel @Inject constructor(
     private val emotionDetector: EmotionDetector,
     private val activityAnalyzer: ActivityAnalyzer,
     private val voiceProcessor: VoiceProcessor,
-    private val memoryManager: MemoryManager
+    private val memoryManager: MemoryManager,
+    private val audioToneAnalyzer: AudioToneAnalyzer,
+    private val billingManager: BillingManager
 ) : ViewModel() {
 
     // ── UI State ─────────────────────────────────────────────────────────────
@@ -43,6 +53,15 @@ class ChatViewModel @Inject constructor(
 
     private val _currentEmotion = MutableStateFlow(Emotion.NEUTRAL)
     val currentEmotion: StateFlow<Emotion> = _currentEmotion.asStateFlow()
+
+    private val _audioToneEmotion = MutableStateFlow(Emotion.UNKNOWN)
+    val audioToneEmotion: StateFlow<Emotion> = _audioToneEmotion.asStateFlow()
+
+    private val _effectiveEmotion = MutableStateFlow(Emotion.NEUTRAL)
+    val effectiveEmotion: StateFlow<Emotion> = _effectiveEmotion.asStateFlow()
+
+    private val _toneInsight = MutableStateFlow<ToneInsight?>(null)
+    val toneInsight: StateFlow<ToneInsight?> = _toneInsight.asStateFlow()
 
     private val _activityCaptions = MutableStateFlow<List<ActivityCaption>>(emptyList())
     val activityCaptions: StateFlow<List<ActivityCaption>> = _activityCaptions.asStateFlow()
@@ -68,6 +87,41 @@ class ChatViewModel @Inject constructor(
     private val _isTtsEnabled = MutableStateFlow(true)
     val isTtsEnabled: StateFlow<Boolean> = _isTtsEnabled.asStateFlow()
 
+    private val _isContinuousConversationEnabled = MutableStateFlow(false)
+    val isContinuousConversationEnabled: StateFlow<Boolean> =
+        _isContinuousConversationEnabled.asStateFlow()
+
+    private val _isPremiumUser = MutableStateFlow(false)
+    val isPremiumUser: StateFlow<Boolean> = _isPremiumUser.asStateFlow()
+
+    private val _isBillingReady = MutableStateFlow(false)
+    val isBillingReady: StateFlow<Boolean> = _isBillingReady.asStateFlow()
+
+    private val _isAiAgentActive = MutableStateFlow(false)
+    val isAiAgentActive: StateFlow<Boolean> = _isAiAgentActive.asStateFlow()
+
+    private val _premiumOffers = MutableStateFlow<List<PremiumOffer>>(emptyList())
+    val premiumOffers: StateFlow<List<PremiumOffer>> = _premiumOffers.asStateFlow()
+
+    private val _isPurchaseInProgress = MutableStateFlow(false)
+    val isPurchaseInProgress: StateFlow<Boolean> = _isPurchaseInProgress.asStateFlow()
+
+    private val _isRestoreInProgress = MutableStateFlow(false)
+    val isRestoreInProgress: StateFlow<Boolean> = _isRestoreInProgress.asStateFlow()
+
+    private val _isProThemeEnabled = MutableStateFlow(false)
+    val isProThemeEnabled: StateFlow<Boolean> = _isProThemeEnabled.asStateFlow()
+
+    private val _isExportWithInsights = MutableStateFlow(true)
+    val isExportWithInsights: StateFlow<Boolean> = _isExportWithInsights.asStateFlow()
+
+    private val _exportPayload = MutableStateFlow<String?>(null)
+    val exportPayload: StateFlow<String?> = _exportPayload.asStateFlow()
+
+    private val _premiumFeatureMatrix = MutableStateFlow(buildPremiumMatrix(false))
+    val premiumFeatureMatrix: StateFlow<Map<PremiumFeature, Boolean>> =
+        _premiumFeatureMatrix.asStateFlow()
+
     private var generationJob: Job? = null
     private var messageIdCounter = 0L
 
@@ -79,6 +133,8 @@ class ChatViewModel @Inject constructor(
             observeEmotionDetection()
             observeActivityCaptions()
             observeVoiceRecognition()
+            observeAudioToneSignals()
+            observeBillingState()
         }
     }
 
@@ -92,9 +148,16 @@ class ChatViewModel @Inject constructor(
         _isTtsEnabled.update { memoryManager.isTtsEnabled() }
         responseEngine.setTtsEnabled(_isTtsEnabled.value)
 
+        _isContinuousConversationEnabled.update { memoryManager.isContinuousConversationEnabled() }
+        _isPremiumUser.update { memoryManager.isPremiumUnlocked() }
+        _isProThemeEnabled.update { memoryManager.isProThemeEnabled() }
+        _isExportWithInsights.update { memoryManager.isExportWithInsightsEnabled() }
+        _premiumFeatureMatrix.update { buildPremiumMatrix(_isPremiumUser.value) }
+
         viewModelScope.launch(Dispatchers.IO) {
             val loaded = responseEngine.loadModel()
             _isModelLoaded.update { loaded }
+            updateAiActiveState()
             Log.i(TAG, "Model loaded: $loaded")
         }
     }
@@ -103,6 +166,7 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             emotionDetector.emotionFlow.collect { emotion ->
                 _currentEmotion.update { emotion }
+                updateEffectiveEmotion()
             }
         }
     }
@@ -119,7 +183,7 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             voiceProcessor.recognizedTextFlow.collect { text ->
                 if (text.isNotBlank()) {
-                    sendMessage(text)
+                    sendMessage(text, fromVoiceInput = true)
                 }
             }
         }
@@ -127,6 +191,7 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             voiceProcessor.listeningStateFlow.collect { listening ->
                 _isListening.update { listening }
+                updateAiActiveState()
             }
         }
 
@@ -135,11 +200,75 @@ class ChatViewModel @Inject constructor(
                 handleVoiceError(error)
             }
         }
+
+        viewModelScope.launch {
+            voiceProcessor.rmsFlow.collect { rms ->
+                audioToneAnalyzer.onRmsSample(rms)
+            }
+        }
+    }
+
+    private fun observeAudioToneSignals() {
+        viewModelScope.launch {
+            audioToneAnalyzer.audioEmotionFlow.collect { emotion ->
+                _audioToneEmotion.update { emotion }
+                updateEffectiveEmotion()
+            }
+        }
+
+        viewModelScope.launch {
+            audioToneAnalyzer.toneInsightFlow.collect { insight ->
+                _toneInsight.update { insight }
+            }
+        }
+    }
+
+    private fun observeBillingState() {
+        viewModelScope.launch {
+            billingManager.isBillingReady.collect { ready ->
+                _isBillingReady.update { ready }
+            }
+        }
+
+        viewModelScope.launch {
+            billingManager.isPremium.collect { premium ->
+                _isPremiumUser.update { premium }
+                _premiumFeatureMatrix.update { buildPremiumMatrix(premium) }
+                memoryManager.setPremiumUnlocked(premium)
+            }
+        }
+
+        viewModelScope.launch {
+            billingManager.offers.collect { offers ->
+                _premiumOffers.update { offers }
+            }
+        }
+
+        viewModelScope.launch {
+            billingManager.isPurchaseInProgress.collect { inProgress ->
+                _isPurchaseInProgress.update { inProgress }
+            }
+        }
+
+        viewModelScope.launch {
+            billingManager.isRestoreInProgress.collect { inProgress ->
+                _isRestoreInProgress.update { inProgress }
+            }
+        }
+
+        viewModelScope.launch {
+            billingManager.billingMessage.collect { message ->
+                if (message != null) {
+                    _errorMessage.update { message }
+                    billingManager.clearMessage()
+                }
+            }
+        }
     }
 
     // ── Public Actions ────────────────────────────────────────────────────────
 
-    fun sendMessage(text: String) {
+    fun sendMessage(text: String, fromVoiceInput: Boolean = false) {
         if (text.isBlank() || _isGenerating.value) return
 
         val userMessage = ChatMessage(
@@ -157,7 +286,9 @@ class ChatViewModel @Inject constructor(
 
             val context = conversationManager.buildContext(
                 userMessage = text.trim(),
-                emotion = _currentEmotion.value
+                emotion = _effectiveEmotion.value,
+                audioToneEmotion = _audioToneEmotion.value,
+                historyLimit = if (_isPremiumUser.value) 20 else 6
             )
 
             val streamingMessage = ChatMessage(
@@ -199,6 +330,8 @@ class ChatViewModel @Inject constructor(
 
             conversationManager.saveMessage(finalMessage)
             _isGenerating.update { false }
+
+            maybeResumeContinuousConversation(fromVoiceInput)
         }
     }
 
@@ -223,9 +356,89 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    fun toggleContinuousConversation() {
+        if (!_isPremiumUser.value) {
+            _errorMessage.update { "Live conversation is a Premium feature. Upgrade to unlock." }
+            return
+        }
+
+        val enabled = !_isContinuousConversationEnabled.value
+        _isContinuousConversationEnabled.update { enabled }
+
+        viewModelScope.launch {
+            memoryManager.setContinuousConversationEnabled(enabled)
+        }
+
+        if (enabled && _audioPermissionGranted.value && !_isListening.value && !_isGenerating.value) {
+            startVoiceInput()
+        }
+        updateAiActiveState()
+    }
+
+    fun startPremiumUpgrade(activity: Activity, planType: PremiumPlanType = PremiumPlanType.MONTHLY) {
+        billingManager.launchUpgradeFlow(activity, planType)
+    }
+
+    fun restorePurchases() {
+        billingManager.restorePurchases()
+    }
+
+    fun retryBillingConnection() {
+        billingManager.retryConnection()
+    }
+
+    fun toggleProTheme() {
+        if (!hasPremiumFeature(PremiumFeature.PRO_THEMES)) {
+            _errorMessage.update { "Pro themes are available in Premium." }
+            return
+        }
+        val enabled = !_isProThemeEnabled.value
+        _isProThemeEnabled.update { enabled }
+        viewModelScope.launch {
+            memoryManager.setProThemeEnabled(enabled)
+        }
+    }
+
+    fun toggleExportInsights() {
+        val enabled = !_isExportWithInsights.value
+        _isExportWithInsights.update { enabled }
+        viewModelScope.launch {
+            memoryManager.setExportWithInsightsEnabled(enabled)
+        }
+    }
+
+    fun prepareExportPayload() {
+        if (!hasPremiumFeature(PremiumFeature.EXPORT_CHAT)) {
+            _errorMessage.update { "Export is a Premium feature. Upgrade to unlock." }
+            return
+        }
+
+        val tone = _toneInsight.value
+        val header = buildString {
+            appendLine("MoodMitra AI Conversation Export")
+            appendLine("Face emotion: ${_currentEmotion.value.displayName}")
+            if (_isExportWithInsights.value && tone != null) {
+                appendLine("Tone: ${tone.label} (confidence ${(tone.confidence * 100).toInt()}%)")
+            }
+            appendLine()
+        }
+
+        val transcript = messages.value.joinToString(separator = "\n") { msg ->
+            val role = if (msg.isFromUser) "You" else "MoodMitra"
+            "[$role] ${msg.content}"
+        }
+
+        _exportPayload.update { header + transcript }
+    }
+
+    fun clearExportPayload() {
+        _exportPayload.update { null }
+    }
+
     fun onPermissionsResult(cameraGranted: Boolean, audioGranted: Boolean) {
         _cameraPermissionGranted.update { cameraGranted }
         _audioPermissionGranted.update { audioGranted }
+        updateAiActiveState()
 
         if (cameraGranted) {
             emotionDetector.initialize()
@@ -282,6 +495,48 @@ class ChatViewModel @Inject constructor(
             else -> "Voice input error: ${error.message}"
         }
         _errorMessage.update { message }
+    }
+
+    private suspend fun maybeResumeContinuousConversation(fromVoiceInput: Boolean) {
+        if (!fromVoiceInput) return
+        if (!_isContinuousConversationEnabled.value) return
+        if (!_audioPermissionGranted.value) return
+
+        // Small delay helps avoid cutting off the tail end of spoken output.
+        delay(300)
+        startVoiceInput()
+    }
+
+    private fun updateEffectiveEmotion() {
+        _effectiveEmotion.update {
+            when {
+                _currentEmotion.value != Emotion.UNKNOWN -> _currentEmotion.value
+                _audioToneEmotion.value != Emotion.UNKNOWN -> _audioToneEmotion.value
+                else -> Emotion.NEUTRAL
+            }
+        }
+    }
+
+    private fun updateAiActiveState() {
+        _isAiAgentActive.update {
+            _isModelLoaded.value || _cameraPermissionGranted.value || _isListening.value
+        }
+    }
+
+    private fun hasPremiumFeature(feature: PremiumFeature): Boolean {
+        return _premiumFeatureMatrix.value[feature] == true
+    }
+
+    private fun buildPremiumMatrix(isPremium: Boolean): Map<PremiumFeature, Boolean> {
+        return PremiumFeature.entries.associateWith { feature ->
+            when (feature) {
+                PremiumFeature.ADVANCED_TONE_INSIGHTS,
+                PremiumFeature.PRO_THEMES,
+                PremiumFeature.LONG_MEMORY,
+                PremiumFeature.EXPORT_CHAT,
+                PremiumFeature.CONTINUOUS_CONVERSATION -> isPremium
+            }
+        }
     }
 
     override fun onCleared() {

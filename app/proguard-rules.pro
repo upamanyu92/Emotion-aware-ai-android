@@ -39,3 +39,8 @@
 -keepclassmembernames class kotlinx.** {
     volatile <fields>;
 }
+
+# Annotation processor classes referenced from packaged metadata at shrink time.
+-dontwarn javax.annotation.processing.**
+-dontwarn javax.lang.model.**
+

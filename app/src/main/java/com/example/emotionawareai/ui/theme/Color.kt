@@ -32,3 +32,13 @@ val BackgroundLight  = Color(0xFFFFFBFE)
 val BackgroundDark   = Color(0xFF1C1B1F)
 val SurfaceLight     = Color(0xFFFFFBFE)
 val SurfaceDark      = Color(0xFF1C1B1F)
+
+// ── Pro Theme Palette ───────────────────────────────────────────────────────
+val ProPurple = Color(0xFF8B5CF6)
+val ProBlue = Color(0xFF38BDF8)
+val ProAqua = Color(0xFF22D3EE)
+val ProBackgroundDark = Color(0xFF0B1020)
+val ProSurfaceDark = Color(0xCC111827)
+val ProBackgroundLight = Color(0xFFF3F4F6)
+val ProSurfaceLight = Color(0xCCFFFFFF)
+

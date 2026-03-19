@@ -47,6 +47,12 @@ class VoiceProcessor @Inject constructor(
     )
     val listeningStateFlow: SharedFlow<Boolean> = _listeningStateFlow.asSharedFlow()
 
+    private val _rmsFlow = MutableSharedFlow<Float>(
+        extraBufferCapacity = 8,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val rmsFlow: SharedFlow<Float> = _rmsFlow.asSharedFlow()
+
     private val recognitionListener = object : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) {
             _listeningStateFlow.tryEmit(true)
@@ -57,7 +63,9 @@ class VoiceProcessor @Inject constructor(
             Log.d(TAG, "Speech begun")
         }
 
-        override fun onRmsChanged(rmsdB: Float) { /* ignored */ }
+        override fun onRmsChanged(rmsdB: Float) {
+            _rmsFlow.tryEmit(rmsdB)
+        }
 
         override fun onBufferReceived(buffer: ByteArray?) { /* ignored */ }
 

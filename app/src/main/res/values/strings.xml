@@ -1,3 +1,8 @@
 <resources>
-    <string name="app_name">EmotionAwareAI</string>
+    <string name="app_name">MoodMitra AI</string>
+    <string name="premium_title">MoodMitra Premium</string>
+    <string name="premium_cta">Upgrade</string>
+    <string name="premium_restore">Restore</string>
+    <string name="premium_retry">Retry</string>
+    <string name="premium_export">Export</string>
 </resources>

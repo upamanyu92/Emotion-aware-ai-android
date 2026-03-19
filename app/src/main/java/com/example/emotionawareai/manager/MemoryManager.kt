@@ -68,11 +68,35 @@ class MemoryManager @Inject constructor(
     suspend fun isCameraEnabled(): Boolean =
         getPreference(UserPreferenceEntity.KEY_CAMERA_ENABLED, "true").toBoolean()
 
+    suspend fun isContinuousConversationEnabled(): Boolean =
+        getPreference(UserPreferenceEntity.KEY_CONTINUOUS_CONVERSATION_ENABLED, "false").toBoolean()
+
+    suspend fun isPremiumUnlocked(): Boolean =
+        getPreference(UserPreferenceEntity.KEY_PREMIUM_UNLOCKED, "false").toBoolean()
+
+    suspend fun isProThemeEnabled(): Boolean =
+        getPreference(UserPreferenceEntity.KEY_PRO_THEME_ENABLED, "false").toBoolean()
+
+    suspend fun isExportWithInsightsEnabled(): Boolean =
+        getPreference(UserPreferenceEntity.KEY_EXPORT_WITH_INSIGHTS, "true").toBoolean()
+
     suspend fun setTtsEnabled(enabled: Boolean) =
         savePreference(UserPreferenceEntity.KEY_TTS_ENABLED, enabled.toString())
 
     suspend fun setCameraEnabled(enabled: Boolean) =
         savePreference(UserPreferenceEntity.KEY_CAMERA_ENABLED, enabled.toString())
+
+    suspend fun setContinuousConversationEnabled(enabled: Boolean) =
+        savePreference(UserPreferenceEntity.KEY_CONTINUOUS_CONVERSATION_ENABLED, enabled.toString())
+
+    suspend fun setPremiumUnlocked(enabled: Boolean) =
+        savePreference(UserPreferenceEntity.KEY_PREMIUM_UNLOCKED, enabled.toString())
+
+    suspend fun setProThemeEnabled(enabled: Boolean) =
+        savePreference(UserPreferenceEntity.KEY_PRO_THEME_ENABLED, enabled.toString())
+
+    suspend fun setExportWithInsightsEnabled(enabled: Boolean) =
+        savePreference(UserPreferenceEntity.KEY_EXPORT_WITH_INSIGHTS, enabled.toString())
 
     /**
      * Returns the dominant emotion across the last [limit] user messages.

@@ -31,13 +31,32 @@ private val LightColorScheme = lightColorScheme(
     surface = SurfaceLight
 )
 
+private val ProDarkColorScheme = darkColorScheme(
+    primary = ProPurple,
+    secondary = ProBlue,
+    tertiary = ProAqua,
+    background = ProBackgroundDark,
+    surface = ProSurfaceDark
+)
+
+private val ProLightColorScheme = lightColorScheme(
+    primary = ProPurple,
+    secondary = ProBlue,
+    tertiary = ProAqua,
+    background = ProBackgroundLight,
+    surface = ProSurfaceLight
+)
+
 @Composable
 fun EmotionAwareAITheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    proThemeEnabled: Boolean = false,
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {
+        proThemeEnabled && darkTheme -> ProDarkColorScheme
+        proThemeEnabled -> ProLightColorScheme
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)

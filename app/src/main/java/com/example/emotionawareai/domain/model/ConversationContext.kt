@@ -7,6 +7,7 @@ data class ConversationContext(
     val conversationId: Long,
     val userMessage: String,
     val detectedEmotion: Emotion,
+    val audioToneEmotion: Emotion = Emotion.UNKNOWN,
     val recentHistory: List<ChatMessage>,
     val systemStyle: ResponseStyle = ResponseStyle.EMPATHETIC
 ) {
@@ -15,6 +16,9 @@ data class ConversationContext(
      */
     fun buildPrompt(): String = buildString {
         appendLine("[SYSTEM] You are an empathetic AI assistant. ${detectedEmotion.systemPromptHint}")
+        if (audioToneEmotion != Emotion.UNKNOWN && audioToneEmotion != Emotion.NEUTRAL) {
+            appendLine("Voice tone hint: user may sound ${audioToneEmotion.displayName.lowercase()}.")
+        }
         appendLine("Response style: ${systemStyle.description}")
         appendLine("Be concise (2-3 sentences). Do not repeat the user's words verbatim.")
 

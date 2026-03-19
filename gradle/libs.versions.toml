@@ -22,6 +22,7 @@ espressoCore = "3.6.1"
 mockk = "1.13.11"
 kotlinxCoroutinesTest = "1.8.1"
 archCoreTesting = "2.2.0"
+billing = "7.1.1"
 
 [libraries]
 # AndroidX Core
@@ -69,6 +70,9 @@ mediapipe-tasks-vision = { group = "com.google.mediapipe", name = "tasks-vision"
 # Coroutines
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
+
+# Payments
+play-billing = { group = "com.android.billingclient", name = "billing-ktx", version.ref = "billing" }
 
 # Testing
 junit = { group = "junit", name = "junit", version.ref = "junitVersion" }

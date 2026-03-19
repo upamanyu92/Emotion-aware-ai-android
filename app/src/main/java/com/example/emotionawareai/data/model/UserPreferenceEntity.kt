@@ -14,6 +14,11 @@ data class UserPreferenceEntity(
         const val KEY_RESPONSE_STYLE = "preferred_emotion_response_style"
         const val KEY_TTS_ENABLED = "tts_enabled"
         const val KEY_CAMERA_ENABLED = "camera_enabled"
+        const val KEY_CONTINUOUS_CONVERSATION_ENABLED = "continuous_conversation_enabled"
+        const val KEY_PREMIUM_UNLOCKED = "premium_unlocked"
+        const val KEY_PREMIUM_NUDGE_SHOWN = "premium_nudge_shown"
+        const val KEY_PRO_THEME_ENABLED = "pro_theme_enabled"
+        const val KEY_EXPORT_WITH_INSIGHTS = "export_with_insights"
         const val KEY_CONVERSATION_ID = "active_conversation_id"
         const val KEY_FONT_SIZE = "font_size"
     }

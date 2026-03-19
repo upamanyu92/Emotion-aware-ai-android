@@ -12,6 +12,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.emotionawareai.ui.ChatViewModel
 import com.example.emotionawareai.ui.screen.ChatScreen
 import com.example.emotionawareai.ui.theme.EmotionAwareAITheme
@@ -41,7 +42,8 @@ class MainActivity : ComponentActivity() {
         checkAndRequestPermissions()
 
         setContent {
-            EmotionAwareAITheme {
+            val isProThemeEnabled = viewModel.isProThemeEnabled.collectAsStateWithLifecycle().value
+            EmotionAwareAITheme(proThemeEnabled = isProThemeEnabled) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background

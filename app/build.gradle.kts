@@ -10,6 +10,13 @@ android {
     namespace = "com.example.emotionawareai"
     compileSdk = 34
 
+    val keystoreFile = System.getenv("KEYSTORE_FILE")
+    val keystorePassword = System.getenv("KEYSTORE_PASSWORD")
+    val keystoreKeyAlias = System.getenv("KEY_ALIAS")
+    val keystoreKeyPassword = System.getenv("KEY_PASSWORD")
+    val hasReleaseSigning = keystoreFile != null && keystorePassword != null &&
+        keystoreKeyAlias != null && keystoreKeyPassword != null
+
     defaultConfig {
         applicationId = "com.example.emotionawareai"
         minSdk = 26
@@ -18,6 +25,11 @@ android {
         versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        val inAppPremiumSku = System.getenv("BILLING_INAPP_PREMIUM_SKU") ?: "premium_unlock"
+        val monthlyPremiumSku = System.getenv("BILLING_SUBS_MONTHLY_SKU") ?: "premium_monthly"
+        buildConfigField("String", "BILLING_INAPP_PREMIUM_SKU", "\"$inAppPremiumSku\"")
+        buildConfigField("String", "BILLING_SUBS_MONTHLY_SKU", "\"$monthlyPremiumSku\"")
 
         externalNativeBuild {
             cmake {
@@ -33,13 +45,7 @@ android {
 
     signingConfigs {
         create("release") {
-            val keystoreFile = System.getenv("KEYSTORE_FILE")
-            val keystorePassword = System.getenv("KEYSTORE_PASSWORD")
-            val keystoreKeyAlias = System.getenv("KEY_ALIAS")
-            val keystoreKeyPassword = System.getenv("KEY_PASSWORD")
-            if (keystoreFile != null && keystorePassword != null &&
-                keystoreKeyAlias != null && keystoreKeyPassword != null
-            ) {
+            if (hasReleaseSigning) {
                 storeFile = file(keystoreFile)
                 storePassword = keystorePassword
                 keyAlias = keystoreKeyAlias
@@ -50,13 +56,20 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // Keep release stable while we triage startup crash on installed APK.
+            isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = if (hasReleaseSigning) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
+            applicationIdSuffix = ".aisense"
+            versionNameSuffix = "alpha"
         }
         debug {
             isMinifyEnabled = false
@@ -93,6 +106,8 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "/META-INF/LICENSE*"
+            excludes += "/META-INF/NOTICE*"
         }
     }
 
@@ -147,6 +162,9 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
 
+    // Billing
+    implementation(libs.play.billing)
+
     // Testing
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
@@ -154,8 +172,10 @@ dependencies {
     testImplementation(libs.androidx.arch.core.testing)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(libs.androidx.arch.core.testing)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
+    androidTestImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.mockk.android)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
