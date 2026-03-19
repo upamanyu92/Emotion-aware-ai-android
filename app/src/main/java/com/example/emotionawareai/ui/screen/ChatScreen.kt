@@ -1,7 +1,6 @@
 package com.example.emotionawareai.ui.screen
 
 import android.annotation.SuppressLint
-import android.content.Context
 import android.graphics.Bitmap
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -26,7 +25,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -275,11 +273,12 @@ fun ChatScreen(viewModel: ChatViewModel) {
     }
 }
 
+@androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
 @SuppressLint("MissingPermission")
 @Composable
 private fun CameraPreviewOverlay(
     modifier: Modifier = Modifier,
-    onFrame: () -> Unit
+    onBitmapFrame: (Bitmap) -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -305,8 +304,9 @@ private fun CameraPreviewOverlay(
                         .build()
                         .also { analysis ->
                             analysis.setAnalyzer(analysisExecutor) { imageProxy ->
-                                onFrame()
+                                val bitmap = imageProxy.toBitmap()
                                 imageProxy.close()
+                                onBitmapFrame(bitmap)
                             }
                         }
 
