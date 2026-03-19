@@ -2,6 +2,7 @@ package com.example.emotionawareai.ui.screen
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Bitmap
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
@@ -69,7 +70,6 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.emotionawareai.engine.EmotionDetector
 import com.example.emotionawareai.ui.ChatViewModel
 import com.example.emotionawareai.ui.component.ActivityCaptionOverlay
 import com.example.emotionawareai.ui.component.EmotionIndicator
@@ -180,6 +180,15 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     item { Spacer(Modifier.height(8.dp)) }
                 }
 
+                // ── Activity caption strip ───────────────────────────────────
+                AnimatedVisibility(
+                    visible = cameraGranted && activityCaptions.isNotEmpty(),
+                    enter = fadeIn(),
+                    exit = fadeOut()
+                ) {
+                    ActivityCaptionOverlay(captions = activityCaptions)
+                }
+
                 // ── Input bar ────────────────────────────────────────────────
                 Row(
                     modifier = Modifier
@@ -259,7 +268,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(bottom = 100.dp, end = 16.dp),
-                    onFrame = { /* EmotionDetector is injected; frames routed via ImageAnalysis */ }
+                    onBitmapFrame = viewModel::onCameraFrame
                 )
             }
         }
