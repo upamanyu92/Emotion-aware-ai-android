@@ -68,8 +68,9 @@ android {
             } else {
                 signingConfigs.getByName("debug")
             }
-            applicationIdSuffix = ".aisense"
-            versionNameSuffix = "alpha"
+            // Remove applicationIdSuffix for Play Store compatibility
+            // Play Store packageName must match the base applicationId
+            versionNameSuffix = "-alpha"
         }
         debug {
             isMinifyEnabled = false
