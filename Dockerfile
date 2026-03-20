@@ -45,8 +45,20 @@ RUN yes | sdkmanager --licenses > /dev/null 2>&1 && \
         "ndk;26.1.10909125" \
         "cmake;3.22.1"
 
-# Pre-warm Gradle wrapper cache directory
-RUN mkdir -p /root/.gradle/wrapper/dists
+# Create non-root user matching GitHub Actions runner (UID=1001, GID=121)
+# This prevents permission issues when mounting the workspace into the container
+RUN groupadd -g 121 runner && \
+    useradd -m -u 1001 -g 121 -s /bin/bash runner
+
+# Pre-warm Gradle wrapper cache directory for non-root user
+RUN mkdir -p /home/runner/.gradle/wrapper/dists && \
+    chown -R runner:runner /home/runner/.gradle
+
+# Set environment variable for Gradle user home
+ENV GRADLE_USER_HOME=/home/runner/.gradle
+
+# Switch to non-root user
+USER runner
 
 WORKDIR /workspace
 CMD ["/bin/bash"]
