@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -85,6 +86,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -107,7 +109,6 @@ import com.example.emotionawareai.ui.theme.GradMid1
 import com.example.emotionawareai.ui.theme.GradMid2
 import com.example.emotionawareai.ui.theme.GradStart
 import com.example.emotionawareai.ui.theme.NeonCyan
-import com.example.emotionawareai.ui.theme.NeonGold
 import com.example.emotionawareai.ui.theme.NeonPurple
 import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
@@ -644,17 +645,7 @@ private fun NeoChip(
     )
 }
 
-// ── Colour lerp helper ─────────────────────────────────────────────────────────
-private fun lerp(a: Color, b: Color, t: Float): Color = Color(
-    red   = a.red   + (b.red   - a.red)   * t,
-    green = a.green + (b.green - a.green) * t,
-    blue  = a.blue  + (b.blue  - a.blue)  * t,
-    alpha = a.alpha + (b.alpha - a.alpha) * t
-)
-
-// ── dp offset helper (avoids import clash) ────────────────────────────────────
-private fun Modifier.offset(x: androidx.compose.ui.unit.Dp, y: androidx.compose.ui.unit.Dp) =
-    this.then(androidx.compose.foundation.layout.offset(x = x, y = y))
+// ── Colour lerp is provided by androidx.compose.ui.graphics.lerp (imported above)
 
 @androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
 @SuppressLint("MissingPermission")

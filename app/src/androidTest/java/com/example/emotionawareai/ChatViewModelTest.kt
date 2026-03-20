@@ -83,6 +83,7 @@ class ChatViewModelTest {
         coEvery { memoryManager.isProThemeEnabled() } returns false
         coEvery { memoryManager.isExportWithInsightsEnabled() } returns true
         coEvery { memoryManager.setPremiumUnlocked(any()) } returns Unit
+        coEvery { memoryManager.isPremiumFeaturesGloballyEnabled() } returns true
         coEvery { responseEngine.loadModel() } returns true
 
         every { emotionDetector.emotionFlow }   returns emotionSharedFlow

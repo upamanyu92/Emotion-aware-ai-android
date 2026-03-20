@@ -1,0 +1,7 @@
+[
+{
+  "directory": "/home/runner/work/Emotion-aware-ai-android/Emotion-aware-ai-android/app/.cxx/Debug/47456g52/x86_64",
+  "command": "/usr/local/lib/android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=x86_64-none-linux-android26 --sysroot=/usr/local/lib/android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/sysroot -Dllm_engine_EXPORTS -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -std=c++17 -O3 -DANDROID -fno-limit-debug-info  -fPIC -std=c++17 -o CMakeFiles/llm_engine.dir/llm_engine.cpp.o -c /home/runner/work/Emotion-aware-ai-android/Emotion-aware-ai-android/app/src/main/cpp/llm_engine.cpp",
+  "file": "/home/runner/work/Emotion-aware-ai-android/Emotion-aware-ai-android/app/src/main/cpp/llm_engine.cpp"
+}
+]

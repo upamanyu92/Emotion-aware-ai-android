@@ -1,0 +1,27 @@
+{
+  "buildFiles": [
+    "/home/runner/work/Emotion-aware-ai-android/Emotion-aware-ai-android/app/src/main/cpp/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/usr/local/lib/android/sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/home/runner/work/Emotion-aware-ai-android/Emotion-aware-ai-android/app/.cxx/Debug/47456g52/x86_64",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/usr/local/lib/android/sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/home/runner/work/Emotion-aware-ai-android/Emotion-aware-ai-android/app/.cxx/Debug/47456g52/x86_64",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "llm_engine::@6890427a1f51a3e7e1df": {
+      "artifactName": "llm_engine",
+      "abi": "x86_64",
+      "output": "/home/runner/work/Emotion-aware-ai-android/Emotion-aware-ai-android/app/build/intermediates/cxx/Debug/47456g52/obj/x86_64/libllm_engine.so",
+      "runtimeFiles": []
+    }
+  }
+}
