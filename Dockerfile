@@ -50,9 +50,20 @@ RUN yes | sdkmanager --licenses > /dev/null 2>&1 && \
 RUN groupadd -g 121 runner && \
     useradd -m -u 1001 -g 121 -s /bin/bash runner
 
-# Pre-warm Gradle wrapper cache directory for non-root user
-RUN mkdir -p /home/runner/.gradle/wrapper/dists && \
-    chown -R runner:runner /home/runner/.gradle
+# Pre-download Gradle distribution to avoid runtime download as non-root user
+# This prevents permission issues when Gradle wrapper tries to download at runtime
+RUN mkdir -p /tmp/gradle-init && \
+    cd /tmp/gradle-init && \
+    echo 'distributionUrl=https\\://services.gradle.org/distributions/gradle-8.7-bin.zip' > gradle-wrapper.properties && \
+    curl -fsSL https://services.gradle.org/distributions/gradle-8.7-bin.zip -o gradle-8.7-bin.zip && \
+    unzip -q gradle-8.7-bin.zip && \
+    mkdir -p /home/runner/.gradle/wrapper/dists/gradle-8.7-bin && \
+    mv gradle-8.7 /home/runner/.gradle/wrapper/dists/gradle-8.7-bin/ && \
+    cd / && \
+    rm -rf /tmp/gradle-init
+
+# Set proper ownership for Gradle home
+RUN chown -R runner:runner /home/runner/.gradle
 
 # Set environment variable for Gradle user home
 ENV GRADLE_USER_HOME=/home/runner/.gradle
