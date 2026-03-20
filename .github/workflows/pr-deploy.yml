@@ -1,17 +1,28 @@
-name: Release to Google Play
+name: PR Merge – Build APK & Deploy to Play Store
 
+# Triggers on every push to main (i.e. merged PR) and on manual dispatch.
+# Builds a signed release APK + AAB inside the Android Docker builder image
+# and publishes the AAB to the Play Store internal testing track.
+#
+# Required GitHub Secrets:
+#   KEYSTORE_BASE64                  – Base64-encoded release.keystore
+#   KEYSTORE_PASSWORD                – Keystore password
+#   KEY_ALIAS                        – Key alias (e.g. emotionawareai)
+#   KEY_PASSWORD                     – Key password
+#   PLAY_STORE_SERVICE_ACCOUNT_JSON  – Google Play service-account JSON (full content)
 on:
   push:
-    tags:
-      - 'v*.*.*'
+    branches: [ "main" ]
+  workflow_dispatch:
 
+# Only one deployment at a time on the main branch.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-main
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Build & Publish AAB + APK
+  deploy:
+    name: Docker Build & Publish to Play Store
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -29,16 +40,15 @@ jobs:
         with:
           context: .
           file: Dockerfile
-          tags: android-builder:release
+          tags: android-builder:deploy
           load: true
           cache-from: type=gha,scope=android-builder
           cache-to: type=gha,mode=max,scope=android-builder
 
-      # Decode the Base64-encoded keystore stored in GitHub Secrets and write
-      # it to a temporary file so Gradle can reference it during signing.
+      # ── Decode release keystore ───────────────────────────────────────────
       - name: Decode release keystore
         run: |
-          echo "::notice::Decoding release keystore for tag ${{ github.ref_name }}"
+          echo "::notice::Decoding release keystore"
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > "${{ runner.temp }}/release.keystore"
           echo "KEYSTORE_FILE=${{ runner.temp }}/release.keystore" >> "$GITHUB_ENV"
 
@@ -49,20 +59,20 @@ jobs:
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
             -w /workspace \
-            android-builder:release \
+            android-builder:deploy \
             bash -c "chmod +x gradlew && ./gradlew test --stacktrace 2>&1"
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-release-${{ github.run_number }}
+          name: test-results-deploy-${{ github.run_number }}
           path: app/build/reports/tests/
 
-      # ── Build signed APK + AAB ────────────────────────────────────────────
-      - name: Build signed release APK and Android App Bundle (AAB)
+      # ── Build signed APK + AAB inside Docker ─────────────────────────────
+      - name: Build signed release APK and AAB
         run: |
-          echo "::notice::Building signed release APK and AAB for ${{ github.ref_name }}"
+          echo "::notice::Building signed release APK and AAB (SHA ${{ github.sha }})"
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
             -v "${{ runner.temp }}/release.keystore:/tmp/release.keystore:ro" \
@@ -71,25 +81,23 @@ jobs:
             -e KEY_ALIAS="${{ secrets.KEY_ALIAS }}" \
             -e KEY_PASSWORD="${{ secrets.KEY_PASSWORD }}" \
             -w /workspace \
-            android-builder:release \
+            android-builder:deploy \
             bash -c "chmod +x gradlew && ./gradlew assembleRelease bundleRelease --stacktrace 2>&1"
 
       # ── Upload build artifacts ────────────────────────────────────────────
       - name: Upload release APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: release-apk-${{ github.ref_name }}
+          name: release-apk-${{ github.run_number }}
           path: app/build/outputs/apk/release/*.apk
 
       - name: Upload release AAB artifact
         uses: actions/upload-artifact@v4
         with:
-          name: release-aab-${{ github.ref_name }}
+          name: release-aab-${{ github.run_number }}
           path: app/build/outputs/bundle/release/*.aab
 
-      # Write the Google Play service-account JSON to a temp file and upload
-      # the AAB to the "internal" track.  Change `track` to "alpha", "beta",
-      # or "production" when you are ready to expand the rollout.
+      # ── Publish to Google Play Store ──────────────────────────────────────
       - name: Publish to Google Play (internal track)
         uses: r0adkll/upload-google-play@v1
         with:
@@ -100,15 +108,16 @@ jobs:
           status: completed
           changesNotSentForReview: false
 
-      # ── Release summary ───────────────────────────────────────────────────
-      - name: Write release summary
+      # ── Build summary ─────────────────────────────────────────────────────
+      - name: Write deployment summary
         if: always()
         run: |
-          echo "## Release Build Summary – ${{ github.ref_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Deployment Summary" >> "$GITHUB_STEP_SUMMARY"
           echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Tag | \`${{ github.ref_name }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Commit | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Branch | \`${{ github.ref_name }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Triggered by | ${{ github.event_name }} |" >> "$GITHUB_STEP_SUMMARY"
           APK_PATH=$(find "${{ github.workspace }}/app/build/outputs/apk/release" -name '*.apk' 2>/dev/null | head -1)
           AAB_PATH=$(find "${{ github.workspace }}/app/build/outputs/bundle/release" -name '*.aab' 2>/dev/null | head -1)
           if [ -n "$APK_PATH" ]; then
@@ -122,6 +131,7 @@ jobs:
             echo "::notice::Release AAB built ($AAB_SIZE) — published to Play Store internal track"
           fi
 
+      # ── Cleanup ───────────────────────────────────────────────────────────
       - name: Clean up keystore
         if: always()
         run: |

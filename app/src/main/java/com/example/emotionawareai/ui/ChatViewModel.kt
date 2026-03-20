@@ -285,6 +285,8 @@ class ChatViewModel @Inject constructor(
     fun sendMessage(text: String, fromVoiceInput: Boolean = false) {
         if (text.isBlank() || _isGenerating.value) return
 
+        Log.i(TAG, "sendMessage: fromVoice=$fromVoiceInput, emotion=${_effectiveEmotion.value}, length=${text.trim().length}")
+
         val userMessage = ChatMessage(
             id = ++messageIdCounter,
             content = text.trim(),
@@ -342,6 +344,7 @@ class ChatViewModel @Inject constructor(
                 }
             }
 
+            Log.i(TAG, "Generation complete: responseLength=${finalMessage.content.length}")
             conversationManager.saveMessage(finalMessage)
             _isGenerating.update { false }
 
@@ -354,6 +357,7 @@ class ChatViewModel @Inject constructor(
             _errorMessage.update { "Microphone permission is required for voice input" }
             return
         }
+        Log.i(TAG, "startVoiceInput")
         voiceProcessor.startListening()
     }
 
@@ -450,6 +454,7 @@ class ChatViewModel @Inject constructor(
     }
 
     fun onPermissionsResult(cameraGranted: Boolean, audioGranted: Boolean) {
+        Log.i(TAG, "onPermissionsResult: camera=$cameraGranted, audio=$audioGranted")
         _cameraPermissionGranted.update { cameraGranted }
         _audioPermissionGranted.update { audioGranted }
         updateAiActiveState()
@@ -475,6 +480,7 @@ class ChatViewModel @Inject constructor(
     }
 
     fun cancelGeneration() {
+        Log.i(TAG, "cancelGeneration")
         generationJob?.cancel()
         _isGenerating.update { false }
         _messages.update { list ->
@@ -490,6 +496,7 @@ class ChatViewModel @Inject constructor(
     }
 
     fun startNewConversation() {
+        Log.i(TAG, "startNewConversation")
         viewModelScope.launch {
             conversationManager.startNewConversation()
             _messages.update { emptyList() }

@@ -1,5 +1,6 @@
 package com.example.emotionawareai.manager
 
+import android.util.Log
 import com.example.emotionawareai.data.model.UserPreferenceEntity
 import com.example.emotionawareai.domain.model.ChatMessage
 import com.example.emotionawareai.domain.model.ConversationContext
@@ -29,6 +30,7 @@ class ConversationManager @Inject constructor(
     suspend fun ensureConversation(): Long = withContext(Dispatchers.IO) {
         if (activeConversationId == -1L) {
             activeConversationId = repository.getOrCreateActiveConversation()
+            Log.i(TAG, "Resolved active conversation: id=$activeConversationId")
         }
         activeConversationId
     }
@@ -51,6 +53,9 @@ class ConversationManager @Inject constructor(
         val style = runCatching { ResponseStyle.valueOf(styleString) }
             .getOrDefault(ResponseStyle.EMPATHETIC)
 
+        Log.d(TAG, "buildContext: convId=$convId, emotion=$emotion, audioEmotion=$audioToneEmotion, " +
+            "style=$style, historySize=${history.size}, messageLength=${userMessage.length}")
+
         ConversationContext(
             conversationId = convId,
             userMessage = userMessage,
@@ -66,6 +71,7 @@ class ConversationManager @Inject constructor(
      */
     suspend fun saveMessage(message: ChatMessage) = withContext(Dispatchers.IO) {
         val convId = ensureConversation()
+        Log.d(TAG, "saveMessage: role=${message.role}, emotion=${message.emotion}, contentLength=${message.content.length}")
         repository.saveMessage(message, convId)
     }
 
@@ -79,8 +85,13 @@ class ConversationManager @Inject constructor(
                 UserPreferenceEntity.KEY_CONVERSATION_ID,
                 activeConversationId.toString()
             )
+            Log.i(TAG, "Started new conversation: id=$activeConversationId, title='$title'")
             activeConversationId
         }
 
     fun getActiveConversationId(): Long = activeConversationId
+
+    companion object {
+        private const val TAG = "ConversationManager"
+    }
 }

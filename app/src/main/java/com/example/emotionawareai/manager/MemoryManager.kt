@@ -1,5 +1,6 @@
 package com.example.emotionawareai.manager
 
+import android.util.Log
 import com.example.emotionawareai.data.model.UserPreferenceEntity
 import com.example.emotionawareai.domain.model.ChatMessage
 import com.example.emotionawareai.domain.model.Emotion
@@ -80,23 +81,35 @@ class MemoryManager @Inject constructor(
     suspend fun isExportWithInsightsEnabled(): Boolean =
         getPreference(UserPreferenceEntity.KEY_EXPORT_WITH_INSIGHTS, "true").toBoolean()
 
-    suspend fun setTtsEnabled(enabled: Boolean) =
+    suspend fun setTtsEnabled(enabled: Boolean) {
+        Log.i(TAG, "setTtsEnabled: $enabled")
         savePreference(UserPreferenceEntity.KEY_TTS_ENABLED, enabled.toString())
+    }
 
-    suspend fun setCameraEnabled(enabled: Boolean) =
+    suspend fun setCameraEnabled(enabled: Boolean) {
+        Log.i(TAG, "setCameraEnabled: $enabled")
         savePreference(UserPreferenceEntity.KEY_CAMERA_ENABLED, enabled.toString())
+    }
 
-    suspend fun setContinuousConversationEnabled(enabled: Boolean) =
+    suspend fun setContinuousConversationEnabled(enabled: Boolean) {
+        Log.i(TAG, "setContinuousConversationEnabled: $enabled")
         savePreference(UserPreferenceEntity.KEY_CONTINUOUS_CONVERSATION_ENABLED, enabled.toString())
+    }
 
-    suspend fun setPremiumUnlocked(enabled: Boolean) =
+    suspend fun setPremiumUnlocked(enabled: Boolean) {
+        Log.i(TAG, "setPremiumUnlocked: $enabled")
         savePreference(UserPreferenceEntity.KEY_PREMIUM_UNLOCKED, enabled.toString())
+    }
 
-    suspend fun setProThemeEnabled(enabled: Boolean) =
+    suspend fun setProThemeEnabled(enabled: Boolean) {
+        Log.i(TAG, "setProThemeEnabled: $enabled")
         savePreference(UserPreferenceEntity.KEY_PRO_THEME_ENABLED, enabled.toString())
+    }
 
-    suspend fun setExportWithInsightsEnabled(enabled: Boolean) =
+    suspend fun setExportWithInsightsEnabled(enabled: Boolean) {
+        Log.i(TAG, "setExportWithInsightsEnabled: $enabled")
         savePreference(UserPreferenceEntity.KEY_EXPORT_WITH_INSIGHTS, enabled.toString())
+    }
 
     /** Returns whether premium features are globally enabled (remote kill-switch). Defaults true. */
     suspend fun isPremiumFeaturesGloballyEnabled(): Boolean =
@@ -106,11 +119,13 @@ class MemoryManager @Inject constructor(
         ).toBoolean()
 
     /** Updates the remote kill-switch value locally (e.g. after fetching remote config). */
-    suspend fun setPremiumFeaturesGloballyEnabled(enabled: Boolean) =
+    suspend fun setPremiumFeaturesGloballyEnabled(enabled: Boolean) {
+        Log.i(TAG, "setPremiumFeaturesGloballyEnabled: $enabled")
         savePreference(
             UserPreferenceEntity.KEY_PREMIUM_FEATURES_GLOBALLY_ENABLED,
             enabled.toString()
         )
+    }
 
     /**
      * Returns the dominant emotion across the last [limit] user messages.
@@ -126,5 +141,9 @@ class MemoryManager @Inject constructor(
             .eachCount()
             .maxByOrNull { it.value }
             ?.key ?: Emotion.NEUTRAL
+    }
+
+    companion object {
+        private const val TAG = "MemoryManager"
     }
 }

@@ -1,5 +1,6 @@
 package com.example.emotionawareai.domain.repository
 
+import android.util.Log
 import com.example.emotionawareai.data.database.ConversationDao
 import com.example.emotionawareai.data.database.UserPreferenceDao
 import com.example.emotionawareai.data.model.ConversationEntity
@@ -21,8 +22,11 @@ class ConversationRepository @Inject constructor(
 
     // ── Conversations ────────────────────────────────────────────────────────
 
-    suspend fun createConversation(title: String = "New Conversation"): Long =
-        conversationDao.insertConversation(ConversationEntity(title = title))
+    suspend fun createConversation(title: String = "New Conversation"): Long {
+        val id = conversationDao.insertConversation(ConversationEntity(title = title))
+        Log.i(TAG, "Created conversation: id=$id, title='$title'")
+        return id
+    }
 
     fun getAllConversations(): Flow<List<ConversationEntity>> =
         conversationDao.getAllConversations()
@@ -31,10 +35,12 @@ class ConversationRepository @Inject constructor(
         val pref = preferenceDao.getByKey(UserPreferenceEntity.KEY_CONVERSATION_ID)
         val storedId = pref?.value?.toLongOrNull()
         if (storedId != null && conversationDao.getConversationById(storedId) != null) {
+            Log.d(TAG, "Using existing active conversation: id=$storedId")
             return storedId
         }
         val newId = createConversation()
         savePreference(UserPreferenceEntity.KEY_CONVERSATION_ID, newId.toString())
+        Log.i(TAG, "Created new active conversation: id=$newId")
         return newId
     }
 
@@ -49,6 +55,7 @@ class ConversationRepository @Inject constructor(
             timestamp = message.timestamp
         )
         val messageId = conversationDao.insertMessage(entity)
+        Log.d(TAG, "Saved message: id=$messageId, conversationId=$conversationId, role=${message.role}")
 
         // Update conversation's updatedAt timestamp
         conversationDao.getConversationById(conversationId)?.let { conv ->
@@ -91,4 +98,8 @@ class ConversationRepository @Inject constructor(
         emotion = Emotion.fromLabel(emotion),
         timestamp = timestamp
     )
+
+    companion object {
+        private const val TAG = "ConversationRepository"
+    }
 }
