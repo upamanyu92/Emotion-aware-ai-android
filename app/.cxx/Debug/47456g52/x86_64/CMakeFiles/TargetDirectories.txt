@@ -1,3 +1,0 @@
-/home/runner/work/Emotion-aware-ai-android/Emotion-aware-ai-android/app/.cxx/Debug/47456g52/x86_64/CMakeFiles/llm_engine.dir
-/home/runner/work/Emotion-aware-ai-android/Emotion-aware-ai-android/app/.cxx/Debug/47456g52/x86_64/CMakeFiles/edit_cache.dir
-/home/runner/work/Emotion-aware-ai-android/Emotion-aware-ai-android/app/.cxx/Debug/47456g52/x86_64/CMakeFiles/rebuild_cache.dir

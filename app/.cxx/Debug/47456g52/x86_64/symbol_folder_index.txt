@@ -1,1 +1,0 @@
-/home/runner/work/Emotion-aware-ai-android/Emotion-aware-ai-android/app/build/intermediates/cxx/Debug/47456g52/obj/x86_64
