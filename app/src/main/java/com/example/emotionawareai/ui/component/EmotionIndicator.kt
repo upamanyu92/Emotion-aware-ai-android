@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -22,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -34,6 +36,7 @@ import com.example.emotionawareai.ui.theme.EmotionNeutral
 import com.example.emotionawareai.ui.theme.EmotionSad
 import com.example.emotionawareai.ui.theme.EmotionSurprised
 import com.example.emotionawareai.ui.theme.EmotionUnknown
+import com.example.emotionawareai.ui.theme.GlassCard
 
 private fun emotionColor(emotion: Emotion): Color = when (emotion) {
     Emotion.HAPPY     -> EmotionHappy
@@ -54,12 +57,12 @@ fun EmotionIndicator(
 ) {
     val color by animateColorAsState(
         targetValue = emotionColor(emotion),
-        animationSpec = tween(durationMillis = 400),
+        animationSpec = tween(durationMillis = 500),
         label = "emotionColor"
     )
 
     val scale by animateFloatAsState(
-        targetValue = if (emotion != Emotion.NEUTRAL && emotion != Emotion.UNKNOWN) 1.1f else 1f,
+        targetValue = if (emotion != Emotion.NEUTRAL && emotion != Emotion.UNKNOWN) 1.08f else 1f,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "emotionScale"
     )
@@ -68,15 +71,31 @@ fun EmotionIndicator(
         modifier = modifier
             .scale(scale)
             .clip(RoundedCornerShape(20.dp))
-            .background(color.copy(alpha = 0.15f))
-            .border(1.dp, color.copy(alpha = 0.4f), RoundedCornerShape(20.dp))
+            .background(
+                Brush.linearGradient(
+                    listOf(GlassCard, color.copy(alpha = 0.12f))
+                )
+            )
+            .border(
+                width = 1.dp,
+                brush = Brush.linearGradient(
+                    listOf(color.copy(alpha = 0.5f), color.copy(alpha = 0.2f))
+                ),
+                shape = RoundedCornerShape(20.dp)
+            )
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
+        // Colored dot indicator
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .background(color, CircleShape)
+        )
         Text(
             text = emotion.emoji,
-            fontSize = 18.sp
+            fontSize = 16.sp
         )
         if (showLabel) {
             Column {

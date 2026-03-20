@@ -10,14 +10,20 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.EaseInOutCubic
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.WindowInsets
@@ -31,6 +37,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -45,21 +52,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.Diamond
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
@@ -77,9 +81,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -91,11 +98,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.emotionawareai.ui.ChatViewModel
-import com.example.emotionawareai.billing.PremiumPlanType
 import com.example.emotionawareai.ui.component.ActivityCaptionOverlay
 import com.example.emotionawareai.ui.component.EmotionIndicator
 import com.example.emotionawareai.ui.component.MessageBubble
 import com.example.emotionawareai.ui.component.VoiceInputButton
+import com.example.emotionawareai.ui.theme.GlassBorder
+import com.example.emotionawareai.ui.theme.GlassCard
+import com.example.emotionawareai.ui.theme.GradEnd
+import com.example.emotionawareai.ui.theme.GradMid1
+import com.example.emotionawareai.ui.theme.GradMid2
+import com.example.emotionawareai.ui.theme.GradStart
+import com.example.emotionawareai.ui.theme.NeonCyan
+import com.example.emotionawareai.ui.theme.NeonPurple
 import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
 
@@ -114,16 +128,12 @@ fun ChatScreen(viewModel: ChatViewModel) {
     val cameraGranted by viewModel.cameraPermissionGranted.collectAsStateWithLifecycle()
     val isTtsEnabled by viewModel.isTtsEnabled.collectAsStateWithLifecycle()
     val isContinuousConversationEnabled by viewModel.isContinuousConversationEnabled.collectAsStateWithLifecycle()
-    val isPremiumUser by viewModel.isPremiumUser.collectAsStateWithLifecycle()
-    val isBillingReady by viewModel.isBillingReady.collectAsStateWithLifecycle()
     val isAiAgentActive by viewModel.isAiAgentActive.collectAsStateWithLifecycle()
-    val premiumOffers by viewModel.premiumOffers.collectAsStateWithLifecycle()
-    val isPurchaseInProgress by viewModel.isPurchaseInProgress.collectAsStateWithLifecycle()
-    val isRestoreInProgress by viewModel.isRestoreInProgress.collectAsStateWithLifecycle()
     val toneInsight by viewModel.toneInsight.collectAsStateWithLifecycle()
     val isProThemeEnabled by viewModel.isProThemeEnabled.collectAsStateWithLifecycle()
     val isExportWithInsights by viewModel.isExportWithInsights.collectAsStateWithLifecycle()
     val exportPayload by viewModel.exportPayload.collectAsStateWithLifecycle()
+    val premiumFeaturesEnabled by viewModel.premiumFeaturesGloballyEnabled.collectAsStateWithLifecycle()
 
     val activity = LocalContext.current as? Activity
     val haptics = LocalHapticFeedback.current
@@ -160,15 +170,38 @@ fun ChatScreen(viewModel: ChatViewModel) {
         viewModel.clearExportPayload()
     }
 
+    // ── Multi-stop animated background gradient ───────────────────────────────
     val gradientTransition = rememberInfiniteTransition(label = "bgGradient")
     val gradientShift by gradientTransition.animateFloat(
-        initialValue = 0.2f,
+        initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 5000, easing = LinearEasing),
+            animation = tween(durationMillis = 8000, easing = EaseInOutCubic),
             repeatMode = RepeatMode.Reverse
         ),
         label = "gradientShift"
+    )
+    // Accent orb pulse (drives the radial glow blobs)
+    val orbPulse by gradientTransition.animateFloat(
+        initialValue = 0.6f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 3500, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "orbPulse"
+    )
+
+    // Animated gradient colors interpolating between deep-navy anchor stops
+    val gradColor0 = lerp(GradStart, GradMid1, gradientShift)
+    val gradColor1 = lerp(GradMid1, GradMid2, gradientShift)
+    val gradColor2 = lerp(GradMid2, GradEnd, 1f - gradientShift)
+
+    // Send-button scale micro-animation
+    val sendScale by animateFloatAsState(
+        targetValue = if (inputText.isNotBlank() && !isGenerating) 1f else 0.85f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "sendScale"
     )
 
     Scaffold(
@@ -180,7 +213,8 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = stringResource(id = com.example.emotionawareai.R.string.app_name),
-                            style = MaterialTheme.typography.titleLarge
+                            style = MaterialTheme.typography.titleLarge,
+                            color = Color.White
                         )
                         Spacer(Modifier.width(8.dp))
                         if (!isModelLoaded) {
@@ -193,41 +227,55 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     }
                 },
                 actions = {
-                    if (!isPremiumUser) {
-                        IconButton(onClick = { activity?.let(viewModel::startPremiumUpgrade) }) {
-                            Icon(Icons.Default.Diamond, contentDescription = "Upgrade premium")
-                        }
-                    }
-                    IconButton(onClick = { viewModel.toggleContinuousConversation() }) {
+                    IconButton(onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        viewModel.toggleContinuousConversation()
+                    }) {
                         Icon(
-                            imageVector = if (isContinuousConversationEnabled) Icons.Filled.MicOff else Icons.Filled.Mic,
-                            contentDescription = if (isContinuousConversationEnabled) {
+                            imageVector = if (isContinuousConversationEnabled) Icons.Filled.MicOff
+                                          else Icons.Filled.Mic,
+                            contentDescription = if (isContinuousConversationEnabled)
                                 "Disable continuous conversation"
-                            } else {
-                                "Enable continuous conversation"
-                            }
+                            else
+                                "Enable continuous conversation",
+                            tint = if (isContinuousConversationEnabled) NeonCyan else Color.White
                         )
                     }
-                    IconButton(onClick = { viewModel.toggleTts() }) {
+                    IconButton(onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        viewModel.toggleTts()
+                    }) {
                         Icon(
                             imageVector = if (isTtsEnabled) Icons.AutoMirrored.Filled.VolumeUp
                                           else Icons.AutoMirrored.Filled.VolumeOff,
-                            contentDescription = if (isTtsEnabled) "Disable TTS" else "Enable TTS"
+                            contentDescription = if (isTtsEnabled) "Disable TTS" else "Enable TTS",
+                            tint = if (isTtsEnabled) NeonCyan else Color.White
                         )
                     }
-                    IconButton(onClick = { viewModel.startNewConversation() }) {
-                        Icon(Icons.Filled.Add, contentDescription = "New conversation")
+                    IconButton(onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        viewModel.startNewConversation()
+                    }) {
+                        Icon(
+                            Icons.Filled.Add,
+                            contentDescription = "New conversation",
+                            tint = Color.White
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                    titleContentColor = Color.White
                 )
             )
         },
         snackbarHost = {
             SnackbarHost(snackbarHostState) { data ->
-                Snackbar(snackbarData = data)
+                Snackbar(
+                    snackbarData = data,
+                    containerColor = GradMid1.copy(alpha = 0.95f),
+                    contentColor = Color.White
+                )
             }
         }
     ) { paddingValues ->
@@ -237,104 +285,130 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xFF0F172A).copy(alpha = 0.9f + (0.1f * gradientShift)),
-                            Color(0xFF1E1B4B),
-                            Color(0xFF111827).copy(alpha = 0.9f + (0.1f * (1f - gradientShift)))
-                        )
+                        colors = listOf(gradColor0, gradColor1, gradColor2)
                     )
                 )
                 .padding(paddingValues)
         ) {
+            // ── Accent glow orbs (NeoPOP depth effect) ────────────────────────
+            Box(
+                modifier = Modifier
+                    .size((280 * orbPulse).dp)
+                    .align(Alignment.TopStart)
+                    .offset(x = (-60).dp, y = (-40).dp)
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                NeonPurple.copy(alpha = 0.18f * orbPulse),
+                                Color.Transparent
+                            )
+                        ),
+                        shape = CircleShape
+                    )
+                    .blur(40.dp)
+            )
+            Box(
+                modifier = Modifier
+                    .size((200 * (1f - orbPulse * 0.2f)).dp)
+                    .align(Alignment.BottomEnd)
+                    .offset(x = 40.dp, y = 60.dp)
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                NeonCyan.copy(alpha = 0.12f * orbPulse),
+                                Color.Transparent
+                            )
+                        ),
+                        shape = CircleShape
+                    )
+                    .blur(50.dp)
+            )
+
             Column(modifier = Modifier.fillMaxSize()) {
 
+                // ── Status chips row ─────────────────────────────────────────
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    AssistChip(
-                        onClick = { },
-                        label = { Text(if (isAiAgentActive) "AI active" else "AI inactive") },
-                        leadingIcon = {
-                            Icon(Icons.Default.Bolt, contentDescription = null)
-                        }
+                    NeoChip(
+                        label = if (isAiAgentActive) "AI active" else "AI inactive",
+                        icon = { Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(14.dp)) },
+                        active = isAiAgentActive
                     )
-                    AssistChip(
-                        onClick = { },
-                        label = { Text("Face: ${currentEmotion.displayName}") }
+                    NeoChip(
+                        label = "Face: ${currentEmotion.displayName}",
+                        active = true
                     )
-                    AssistChip(
-                        onClick = { },
-                        label = { Text("Voice: ${audioToneEmotion.displayName}") }
+                    NeoChip(
+                        label = "Voice: ${audioToneEmotion.displayName}",
+                        active = true
                     )
                     toneInsight?.let { insight ->
-                        AssistChip(
-                            onClick = { },
-                            label = {
-                                Text("Tone: ${insight.label} ${(insight.confidence * 100).toInt()}%")
-                            }
+                        NeoChip(
+                            label = "Tone: ${insight.label} ${(insight.confidence * 100).toInt()}%",
+                            active = true
                         )
                     }
                 }
 
-                if (!isPremiumUser) {
-                    Card(
+                // ── Fixed camera preview (embedded, not floating) ─────────────
+                AnimatedVisibility(
+                    visible = cameraGranted,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.24f)
-                        ),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                text = stringResource(id = com.example.emotionawareai.R.string.premium_title),
-                                style = MaterialTheme.typography.titleMedium,
-                                color = Color.White
-                            )
-                            Text(
-                                text = "Unlock long memory, export, pro themes, and advanced tone insights.",
-                                color = Color.White.copy(alpha = 0.85f)
-                            )
-
-                            premiumOffers.forEach { offer ->
-                                Button(
-                                    onClick = {
-                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        activity?.let { viewModel.startPremiumUpgrade(it, offer.planType) }
-                                    },
-                                    enabled = isBillingReady && offer.available && !isPurchaseInProgress,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (offer.planType == PremiumPlanType.MONTHLY) {
-                                            Color(0xFF7C3AED)
-                                        } else {
-                                            Color(0xFF2563EB)
-                                        }
+                            .height(100.dp)
+                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .border(
+                                width = 1.dp,
+                                brush = Brush.horizontalGradient(
+                                    listOf(
+                                        NeonPurple.copy(alpha = 0.5f),
+                                        NeonCyan.copy(alpha = 0.4f)
                                     )
-                                ) {
-                                    Text("${offer.title} • ${offer.priceText}")
-                                }
-                            }
-
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(
-                                    onClick = {
-                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        viewModel.restorePurchases()
-                                    },
-                                    enabled = !isRestoreInProgress
-                                ) {
-                                    Text(if (isRestoreInProgress) "Restoring..." else "Restore")
-                                }
-                                Button(onClick = { viewModel.retryBillingConnection() }) {
-                                    Text("Retry")
-                                }
-                            }
+                                ),
+                                shape = RoundedCornerShape(16.dp)
+                            )
+                    ) {
+                        CameraPreviewOverlay(
+                            modifier = Modifier.fillMaxSize(),
+                            onBitmapFrame = viewModel::onCameraFrame
+                        )
+                        // Glassmorphism header label
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(8.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(GlassCard)
+                                .padding(horizontal = 8.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .background(NeonCyan, CircleShape)
+                            )
+                            Text(
+                                text = "LIVE",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = NeonCyan
+                            )
                         }
+                        EmotionIndicator(
+                            emotion = effectiveEmotion,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(8.dp)
+                        )
                     }
                 }
 
@@ -363,82 +437,85 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     ActivityCaptionOverlay(captions = activityCaptions)
                 }
 
+                // ── Action chips row ─────────────────────────────────────────
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    AssistChip(
-                        onClick = { viewModel.toggleContinuousConversation() },
-                        label = {
-                            Text(
-                                if (isContinuousConversationEnabled) "Live conversation on"
-                                else "Live conversation off"
-                            )
-                        },
-                        leadingIcon = {
+                    NeoChip(
+                        label = if (isContinuousConversationEnabled) "Live on" else "Live off",
+                        icon = {
                             Icon(
                                 imageVector = if (isContinuousConversationEnabled) Icons.Filled.Mic
-                                else Icons.Filled.MicOff,
-                                contentDescription = null
+                                              else Icons.Filled.MicOff,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp)
                             )
+                        },
+                        active = isContinuousConversationEnabled,
+                        onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            viewModel.toggleContinuousConversation()
                         }
                     )
 
-                    AssistChip(
-                        onClick = { },
-                        label = {
-                            Text(if (cameraGranted) "Camera context on" else "Camera context off")
+                    NeoChip(
+                        label = if (cameraGranted) "Camera on" else "Camera off",
+                        active = cameraGranted
+                    )
+
+                    NeoChip(
+                        label = if (isProThemeEnabled) "Pro Theme" else "Default",
+                        active = isProThemeEnabled,
+                        onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            viewModel.toggleProTheme()
                         }
                     )
 
-                    if (!isPremiumUser) {
-                        Button(
-                            onClick = {
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                activity?.let(viewModel::startPremiumUpgrade)
-                            },
-                            enabled = isBillingReady,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFFFFC947),
-                                contentColor = Color.Black
-                            )
-                        ) {
-                            Text("Upgrade")
-                        }
-                    } else {
-                        Button(
-                            onClick = {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                viewModel.toggleProTheme()
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isProThemeEnabled) Color(0xFF10B981) else Color(0xFF334155)
-                            )
-                        ) {
-                            Text(if (isProThemeEnabled) "Pro Theme On" else "Pro Theme Off")
-                        }
+                    NeoChip(
+                        label = if (isExportWithInsights) "Insights" else "Transcript",
+                        active = isExportWithInsights,
+                        onClick = { viewModel.toggleExportInsights() }
+                    )
 
-                        Button(onClick = { viewModel.toggleExportInsights() }) {
-                            Text(if (isExportWithInsights) "Insights in Export" else "Transcript Export")
-                        }
-
-                        Button(onClick = {
+                    NeoChip(
+                        label = "Export",
+                        active = true,
+                        onClick = {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             viewModel.prepareExportPayload()
-                        }) {
-                            Text("Export")
                         }
-                    }
+                    )
+
+                    // Remote kill-switch toggle (admin/debug feature)
+                    NeoChip(
+                        label = if (premiumFeaturesEnabled) "Features ✓" else "Features ✗",
+                        active = premiumFeaturesEnabled,
+                        onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            viewModel.setPremiumFeaturesEnabled(!premiumFeaturesEnabled)
+                        }
+                    )
                 }
 
                 // ── Input bar ────────────────────────────────────────────────
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surface)
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, GradStart.copy(alpha = 0.9f))
+                            )
+                        )
+                        .border(
+                            width = 1.dp,
+                            color = GlassBorder,
+                            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+                        )
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
                         .imePadding()
                         .navigationBarsPadding(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -447,7 +524,12 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     OutlinedTextField(
                         value = inputText,
                         onValueChange = { inputText = it },
-                        placeholder = { Text("Message or keep talking in live mode…") },
+                        placeholder = {
+                            Text(
+                                "Message or keep talking…",
+                                color = Color.White.copy(alpha = 0.35f)
+                            )
+                        },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(24.dp),
                         maxLines = 4,
@@ -458,66 +540,112 @@ fun ChatScreen(viewModel: ChatViewModel) {
                         keyboardActions = KeyboardActions(
                             onSend = {
                                 if (inputText.isNotBlank()) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     viewModel.sendMessage(inputText)
                                     inputText = ""
                                 }
                             }
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = NeonPurple.copy(alpha = 0.7f),
+                            unfocusedBorderColor = GlassBorder,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White.copy(alpha = 0.85f),
+                            cursorColor = NeonCyan,
+                            focusedContainerColor = GlassCard,
+                            unfocusedContainerColor = Color(0x0DFFFFFF)
                         )
                     )
 
                     VoiceInputButton(
                         isListening = isListening,
-                        onStartListening = { viewModel.startVoiceInput() },
-                        onStopListening = { viewModel.stopVoiceInput() }
+                        onStartListening = {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            viewModel.startVoiceInput()
+                        },
+                        onStopListening = {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            viewModel.stopVoiceInput()
+                        }
                     )
 
-                    IconButton(
-                        onClick = {
-                            if (inputText.isNotBlank()) {
-                                viewModel.sendMessage(inputText)
-                                inputText = ""
-                            }
-                        },
-                        enabled = inputText.isNotBlank() && !isGenerating,
+                    Box(
                         modifier = Modifier
+                            .scale(sendScale)
                             .size(52.dp)
                             .clip(CircleShape)
                             .background(
                                 if (inputText.isNotBlank() && !isGenerating)
-                                    Color(0xFF7C3AED)
+                                    Brush.radialGradient(
+                                        listOf(NeonPurple, NeonCyan.copy(alpha = 0.6f))
+                                    )
                                 else
-                                    MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-                            )
+                                    Brush.radialGradient(
+                                        listOf(
+                                            MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                                            MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
+                                        )
+                                    )
+                            ),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "Send message",
-                            tint = Color.White
-                        )
+                        IconButton(
+                            onClick = {
+                                if (inputText.isNotBlank()) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    viewModel.sendMessage(inputText)
+                                    inputText = ""
+                                }
+                            },
+                            enabled = inputText.isNotBlank() && !isGenerating,
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Send message",
+                                tint = Color.White
+                            )
+                        }
                     }
                 }
-            }
-
-            // ── Emotion indicator overlay (top-right) ─────────────────────
-            EmotionIndicator(
-                emotion = effectiveEmotion,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 52.dp, end = 8.dp)
-            )
-
-            // ── Floating camera preview (bottom-right) ────────────────────
-            if (cameraGranted) {
-                CameraPreviewOverlay(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(bottom = 112.dp, end = 16.dp),
-                    onBitmapFrame = viewModel::onCameraFrame
-                )
             }
         }
     }
 }
+
+// ── NeoPOP-style assist chip ───────────────────────────────────────────────────
+@Composable
+private fun NeoChip(
+    label: String,
+    modifier: Modifier = Modifier,
+    active: Boolean = false,
+    icon: (@Composable () -> Unit)? = null,
+    onClick: () -> Unit = {}
+) {
+    AssistChip(
+        onClick = onClick,
+        label = {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (active) NeonCyan else Color.White.copy(alpha = 0.6f)
+            )
+        },
+        leadingIcon = icon,
+        modifier = modifier,
+        colors = AssistChipDefaults.assistChipColors(
+            containerColor = if (active) NeonPurple.copy(alpha = 0.18f) else GlassCard,
+            labelColor = if (active) NeonCyan else Color.White.copy(alpha = 0.6f),
+            leadingIconContentColor = if (active) NeonCyan else Color.White.copy(alpha = 0.5f)
+        ),
+        border = AssistChipDefaults.assistChipBorder(
+            enabled = true,
+            borderColor = if (active) NeonPurple.copy(alpha = 0.45f) else GlassBorder
+        )
+    )
+}
+
+// ── Colour lerp is provided by androidx.compose.ui.graphics.lerp (imported above)
 
 @androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
 @SuppressLint("MissingPermission")
@@ -570,12 +698,5 @@ private fun CameraPreviewOverlay(
             }
         },
         modifier = modifier
-            .size(128.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .border(
-                2.dp,
-                Color.White.copy(alpha = 0.5f),
-                RoundedCornerShape(12.dp)
-            )
     )
 }

@@ -62,3 +62,12 @@ app/src/main/assets/models/*.bin
 # Keystore files
 *.jks
 *.keystore
+
+# Local gradle launcher copy (not needed in source control)
+lib/
+
+# CMake build outputs
+app/.cxx/
+
+# Kotlin build session files
+.kotlin/

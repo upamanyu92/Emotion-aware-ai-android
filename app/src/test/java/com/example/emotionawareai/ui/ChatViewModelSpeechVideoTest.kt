@@ -84,6 +84,7 @@ class ChatViewModelSpeechVideoTest {
         coEvery { memoryManager.isContinuousConversationEnabled() } returns false
         coEvery { memoryManager.isPremiumUnlocked() } returns true
         coEvery { memoryManager.setPremiumUnlocked(any()) } returns Unit
+        coEvery { memoryManager.isPremiumFeaturesGloballyEnabled() } returns true
         coEvery { responseEngine.loadModel() } returns true
 
         coEvery { conversationManager.buildContext(any(), any(), any(), any()) } returns mockk(relaxed = true)
