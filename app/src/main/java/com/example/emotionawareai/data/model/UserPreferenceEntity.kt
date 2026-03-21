@@ -27,5 +27,9 @@ data class UserPreferenceEntity(
         const val KEY_USER_NAME = "user_name"
         /** User profile: emoji avatar chosen at login. */
         const val KEY_USER_AVATAR = "user_avatar"
+        /** Whether activity captions overlay is visible. */
+        const val KEY_CAPTIONS_ENABLED = "captions_enabled"
+        /** Whether the camera preview feed is shown to the user (camera may still be running). */
+        const val KEY_CAMERA_PREVIEW_VISIBLE = "camera_preview_visible"
     }
 }
