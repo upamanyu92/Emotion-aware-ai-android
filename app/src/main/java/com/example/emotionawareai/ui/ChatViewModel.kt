@@ -22,6 +22,7 @@ import com.example.emotionawareai.voice.AudioToneAnalyzer
 import com.example.emotionawareai.voice.ToneInsight
 import com.example.emotionawareai.voice.VoiceError
 import com.example.emotionawareai.voice.VoiceProcessor
+import com.example.emotionawareai.voice.isBenignForContinuousMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -87,7 +88,7 @@ class ChatViewModel @Inject constructor(
     private val _isTtsEnabled = MutableStateFlow(true)
     val isTtsEnabled: StateFlow<Boolean> = _isTtsEnabled.asStateFlow()
 
-    private val _isContinuousConversationEnabled = MutableStateFlow(false)
+    private val _isContinuousConversationEnabled = MutableStateFlow(true)
     val isContinuousConversationEnabled: StateFlow<Boolean> =
         _isContinuousConversationEnabled.asStateFlow()
 
@@ -131,6 +132,20 @@ class ChatViewModel @Inject constructor(
     val premiumFeaturesGloballyEnabled: StateFlow<Boolean> =
         _premiumFeaturesGloballyEnabled.asStateFlow()
 
+    // ── User profile ──────────────────────────────────────────────────────────
+
+    /**
+     * Null = not yet checked. False = no profile saved. True = profile exists.
+     */
+    private val _hasUserProfile = MutableStateFlow<Boolean?>(null)
+    val hasUserProfile: StateFlow<Boolean?> = _hasUserProfile.asStateFlow()
+
+    private val _userName = MutableStateFlow("")
+    val userName: StateFlow<String> = _userName.asStateFlow()
+
+    private val _userAvatar = MutableStateFlow("😊")
+    val userAvatar: StateFlow<String> = _userAvatar.asStateFlow()
+
     private var generationJob: Job? = null
     private var messageIdCounter = 0L
 
@@ -157,7 +172,9 @@ class ChatViewModel @Inject constructor(
         _isTtsEnabled.update { memoryManager.isTtsEnabled() }
         responseEngine.setTtsEnabled(_isTtsEnabled.value)
 
-        _isContinuousConversationEnabled.update { memoryManager.isContinuousConversationEnabled() }
+        // Load the persisted continuous conversation preference; default is true (live mode).
+        val continuousEnabled = memoryManager.isContinuousConversationEnabled()
+        _isContinuousConversationEnabled.update { continuousEnabled }
         _isPremiumUser.update { memoryManager.isPremiumUnlocked() }
         _isProThemeEnabled.update { memoryManager.isProThemeEnabled() }
         _isExportWithInsights.update { memoryManager.isExportWithInsightsEnabled() }
@@ -165,6 +182,12 @@ class ChatViewModel @Inject constructor(
         _premiumFeaturesGloballyEnabled.update { globallyEnabled }
         // Grant all features for free; respect the remote kill-switch if off.
         _premiumFeatureMatrix.update { buildPremiumMatrix(globallyEnabled) }
+
+        // Load user profile
+        val name = memoryManager.getUserName()
+        _userName.update { name }
+        _userAvatar.update { memoryManager.getUserAvatar() }
+        _hasUserProfile.update { name.isNotBlank() }
 
         viewModelScope.launch(Dispatchers.IO) {
             val loaded = responseEngine.loadModel()
@@ -357,12 +380,16 @@ class ChatViewModel @Inject constructor(
             _errorMessage.update { "Microphone permission is required for voice input" }
             return
         }
-        Log.i(TAG, "startVoiceInput")
-        voiceProcessor.startListening()
+        Log.i(TAG, "startVoiceInput (continuous=${_isContinuousConversationEnabled.value})")
+        if (_isContinuousConversationEnabled.value) {
+            voiceProcessor.startContinuousListening()
+        } else {
+            voiceProcessor.startListening()
+        }
     }
 
     fun stopVoiceInput() {
-        voiceProcessor.stopListening()
+        voiceProcessor.stopContinuousListening()
     }
 
     fun toggleTts() {
@@ -388,7 +415,9 @@ class ChatViewModel @Inject constructor(
         }
 
         if (enabled && _audioPermissionGranted.value && !_isListening.value && !_isGenerating.value) {
-            startVoiceInput()
+            voiceProcessor.startContinuousListening()
+        } else if (!enabled) {
+            voiceProcessor.stopContinuousListening()
         }
         updateAiActiveState()
     }
@@ -434,6 +463,7 @@ class ChatViewModel @Inject constructor(
         val tone = _toneInsight.value
         val header = buildString {
             appendLine("MoodMitra AI Conversation Export")
+            appendLine("User: ${_userName.value}")
             appendLine("Face emotion: ${_currentEmotion.value.displayName}")
             if (_isExportWithInsights.value && tone != null) {
                 appendLine("Tone: ${tone.label} (confidence ${(tone.confidence * 100).toInt()}%)")
@@ -442,7 +472,7 @@ class ChatViewModel @Inject constructor(
         }
 
         val transcript = messages.value.joinToString(separator = "\n") { msg ->
-            val role = if (msg.isFromUser) "You" else "MoodMitra"
+            val role = if (msg.isFromUser) _userName.value.ifBlank { "You" } else "MoodMitra"
             "[$role] ${msg.content}"
         }
 
@@ -451,6 +481,42 @@ class ChatViewModel @Inject constructor(
 
     fun clearExportPayload() {
         _exportPayload.update { null }
+    }
+
+    /**
+     * Saves the user's profile (name + avatar) and marks the profile as set.
+     * Called from the login/onboarding screen.
+     */
+    fun saveUserProfile(name: String, avatar: String) {
+        val trimmedName = name.trim()
+        if (trimmedName.isBlank()) return
+        _userName.update { trimmedName }
+        _userAvatar.update { avatar }
+        _hasUserProfile.update { true }
+        viewModelScope.launch {
+            memoryManager.setUserName(trimmedName)
+            memoryManager.setUserAvatar(avatar)
+            // Persist continuous conversation enabled by default for new users
+            memoryManager.setContinuousConversationEnabled(true)
+        }
+    }
+
+    /**
+     * Updates the user's display name.
+     */
+    fun updateUserName(name: String) {
+        val trimmedName = name.trim()
+        if (trimmedName.isBlank()) return
+        _userName.update { trimmedName }
+        viewModelScope.launch { memoryManager.setUserName(trimmedName) }
+    }
+
+    /**
+     * Updates the user's avatar emoji.
+     */
+    fun updateUserAvatar(avatar: String) {
+        _userAvatar.update { avatar }
+        viewModelScope.launch { memoryManager.setUserAvatar(avatar) }
     }
 
     fun onPermissionsResult(cameraGranted: Boolean, audioGranted: Boolean) {
@@ -462,6 +528,11 @@ class ChatViewModel @Inject constructor(
         if (cameraGranted) {
             emotionDetector.initialize()
             activityAnalyzer.initialize()
+        }
+
+        // Auto-start continuous voice if permission granted and mode is enabled
+        if (audioGranted && _isContinuousConversationEnabled.value && !_isListening.value) {
+            voiceProcessor.startContinuousListening()
         }
     }
 
@@ -506,6 +577,8 @@ class ChatViewModel @Inject constructor(
     // ── Private Helpers ───────────────────────────────────────────────────────
 
     private fun handleVoiceError(error: VoiceError) {
+        // Benign errors in continuous mode are handled by VoiceProcessor's auto-restart.
+        if (_isContinuousConversationEnabled.value && error.isBenignForContinuousMode) return
         val message = when (error) {
             VoiceError.NO_MATCH, VoiceError.SPEECH_TIMEOUT ->
                 "Couldn't hear you — please try again"
@@ -523,9 +596,12 @@ class ChatViewModel @Inject constructor(
         if (!_isContinuousConversationEnabled.value) return
         if (!_audioPermissionGranted.value) return
 
-        // Small delay helps avoid cutting off the tail end of spoken output.
+        // In continuous mode VoiceProcessor handles auto-restart internally, but after
+        // AI response generation we explicitly re-start to ensure the mic is live.
         delay(300)
-        startVoiceInput()
+        if (!_isListening.value) {
+            voiceProcessor.startContinuousListening()
+        }
     }
 
     private fun updateEffectiveEmotion() {

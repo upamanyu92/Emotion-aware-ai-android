@@ -23,5 +23,9 @@ data class UserPreferenceEntity(
         const val KEY_FONT_SIZE = "font_size"
         /** Remote-config kill-switch: when false, all premium features are disabled. */
         const val KEY_PREMIUM_FEATURES_GLOBALLY_ENABLED = "premium_features_globally_enabled"
+        /** User profile: display name entered at login. */
+        const val KEY_USER_NAME = "user_name"
+        /** User profile: emoji avatar chosen at login. */
+        const val KEY_USER_AVATAR = "user_avatar"
     }
 }

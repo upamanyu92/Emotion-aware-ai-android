@@ -101,6 +101,7 @@ import com.example.emotionawareai.ui.ChatViewModel
 import com.example.emotionawareai.ui.component.ActivityCaptionOverlay
 import com.example.emotionawareai.ui.component.EmotionIndicator
 import com.example.emotionawareai.ui.component.MessageBubble
+import com.example.emotionawareai.ui.component.TelemetryDashboard
 import com.example.emotionawareai.ui.component.VoiceInputButton
 import com.example.emotionawareai.ui.theme.GlassBorder
 import com.example.emotionawareai.ui.theme.GlassCard
@@ -112,6 +113,9 @@ import com.example.emotionawareai.ui.theme.NeonCyan
 import com.example.emotionawareai.ui.theme.NeonPurple
 import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
+
+/** Number of most-recent messages to display in the conversation view. */
+private const val VISIBLE_MESSAGE_COUNT = 4
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -134,6 +138,12 @@ fun ChatScreen(viewModel: ChatViewModel) {
     val isExportWithInsights by viewModel.isExportWithInsights.collectAsStateWithLifecycle()
     val exportPayload by viewModel.exportPayload.collectAsStateWithLifecycle()
     val premiumFeaturesEnabled by viewModel.premiumFeaturesGloballyEnabled.collectAsStateWithLifecycle()
+    val userName by viewModel.userName.collectAsStateWithLifecycle()
+    val userAvatar by viewModel.userAvatar.collectAsStateWithLifecycle()
+
+    // Only the last VISIBLE_MESSAGE_COUNT messages are shown; older ones are in DB.
+    val displayMessages = remember(messages) { messages.takeLast(VISIBLE_MESSAGE_COUNT) }
+    val hiddenCount = (messages.size - VISIBLE_MESSAGE_COUNT).coerceAtLeast(0)
 
     val activity = LocalContext.current as? Activity
     val haptics = LocalHapticFeedback.current
@@ -144,9 +154,9 @@ fun ChatScreen(viewModel: ChatViewModel) {
     val scope = rememberCoroutineScope()
 
     // Scroll to the latest message
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+    LaunchedEffect(displayMessages.size) {
+        if (displayMessages.isNotEmpty()) {
+            listState.animateScrollToItem(displayMessages.size - 1)
         }
     }
 
@@ -211,18 +221,33 @@ fun ChatScreen(viewModel: ChatViewModel) {
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = stringResource(id = com.example.emotionawareai.R.string.app_name),
-                            style = MaterialTheme.typography.titleLarge,
-                            color = Color.White
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        if (!isModelLoaded) {
+                        // User avatar badge
+                        if (userAvatar.isNotBlank()) {
+                            androidx.compose.foundation.layout.Box(
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .clip(CircleShape)
+                                    .background(NeonPurple.copy(alpha = 0.3f))
+                                    .border(1.dp, NeonPurple.copy(alpha = 0.6f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(userAvatar, style = MaterialTheme.typography.labelLarge)
+                            }
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Column {
                             Text(
-                                text = "• stub mode",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.outline
+                                text = if (userName.isNotBlank()) "Hi, $userName" else stringResource(id = com.example.emotionawareai.R.string.app_name),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color.White
                             )
+                            if (!isModelLoaded) {
+                                Text(
+                                    text = "stub mode",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                            }
                         }
                     }
                 },
@@ -326,33 +351,14 @@ fun ChatScreen(viewModel: ChatViewModel) {
 
             Column(modifier = Modifier.fillMaxSize()) {
 
-                // ── Status chips row ─────────────────────────────────────────
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    NeoChip(
-                        label = if (isAiAgentActive) "AI active" else "AI inactive",
-                        icon = { Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(14.dp)) },
-                        active = isAiAgentActive
-                    )
-                    NeoChip(
-                        label = "Face: ${currentEmotion.displayName}",
-                        active = true
-                    )
-                    NeoChip(
-                        label = "Voice: ${audioToneEmotion.displayName}",
-                        active = true
-                    )
-                    toneInsight?.let { insight ->
-                        NeoChip(
-                            label = "Tone: ${insight.label} ${(insight.confidence * 100).toInt()}%",
-                            active = true
-                        )
-                    }
-                }
+                // ── Live telemetry dashboard ──────────────────────────────────
+                TelemetryDashboard(
+                    faceEmotion = currentEmotion,
+                    voiceEmotion = audioToneEmotion,
+                    toneInsight = toneInsight,
+                    userName = userName,
+                    isListening = isListening
+                )
 
                 // ── Fixed camera preview (embedded, not floating) ─────────────
                 AnimatedVisibility(
@@ -412,15 +418,32 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     }
                 }
 
-                // ── Message list ─────────────────────────────────────────────
+                // ── Message list (last 2 conversations = 4 messages) ──────────
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    item { Spacer(Modifier.height(8.dp)) }
+                    item {
+                        Spacer(Modifier.height(4.dp))
+                        // Show a hint when older messages are hidden
+                        if (hiddenCount > 0) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 2.dp),
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    text = "↑ $hiddenCount earlier message${if (hiddenCount == 1) "" else "s"} • New conversation to clear",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White.copy(alpha = 0.35f)
+                                )
+                            }
+                        }
+                    }
                     items(
-                        items = messages,
+                        items = displayMessages,
                         key = { it.id }
                     ) { message ->
                         MessageBubble(message = message)
