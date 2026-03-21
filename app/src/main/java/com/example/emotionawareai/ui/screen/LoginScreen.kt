@@ -291,8 +291,9 @@ fun LoginScreen(onProfileCreated: (name: String, avatar: String) -> Unit) {
                     keyboardActions = KeyboardActions(
                         onDone = {
                             keyboard?.hide()
-                            if (name.trim().isNotBlank()) {
-                                onProfileCreated(name.trim(), selectedAvatar)
+                            val trimmedName = name.trim()
+                            if (trimmedName.isNotBlank()) {
+                                onProfileCreated(trimmedName, selectedAvatar)
                             }
                         }
                     ),
@@ -314,8 +315,9 @@ fun LoginScreen(onProfileCreated: (name: String, avatar: String) -> Unit) {
                     onClick = {
                         keyboard?.hide()
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        if (name.trim().isNotBlank()) {
-                            onProfileCreated(name.trim(), selectedAvatar)
+                        val trimmedName = name.trim()
+                        if (trimmedName.isNotBlank()) {
+                            onProfileCreated(trimmedName, selectedAvatar)
                         }
                     },
                     enabled = name.trim().isNotBlank(),

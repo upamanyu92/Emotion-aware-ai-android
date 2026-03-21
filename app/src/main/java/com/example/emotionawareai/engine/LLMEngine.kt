@@ -89,8 +89,9 @@ class LLMEngine @Inject constructor(
         val emotionHint = extractEmotionHint(prompt)
         val userMessage = extractUserMessage(prompt).ifBlank { "hello" }
         val pool = STUB_RESPONSE_POOLS[emotionHint] ?: STUB_RESPONSE_POOLS["NEUTRAL"]!!
-        // Use the hash of the user message to deterministically but variedly index
-        val index = Math.abs(userMessage.lowercase().hashCode()) % pool.size
+        // Use the hash of the user message to deterministically but variedly index.
+        // Mask to positive range to avoid Integer.MIN_VALUE edge case with abs().
+        val index = (userMessage.lowercase().hashCode() and 0x7FFFFFFF) % pool.size
         return pool[index]
     }
 

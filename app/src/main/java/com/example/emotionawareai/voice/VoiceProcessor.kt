@@ -217,18 +217,22 @@ class VoiceProcessor @Inject constructor(
 
     /**
      * Posts a restart runnable on the main thread after a short delay.
-     * Uses a tagged token so duplicate restarts can be cancelled safely.
+     * Any previously scheduled restart is cancelled first so only one restart
+     * is ever pending at a time. The [isRestarting] flag is cleared immediately
+     * so that if another error arrives while the delay is still counting down,
+     * the token-based cancellation prevents duplicate scheduling.
      */
     private fun scheduleRestart(delayMs: Long = RESTART_DELAY_MS) {
-        if (!isContinuousMode || isRestarting) return
-        isRestarting = true
+        if (!isContinuousMode) return
+        // Cancel any in-flight restart; 'isRestarting' tracks whether a callback is queued.
         mainHandler.removeCallbacksAndMessages(RESTART_TOKEN)
-        mainHandler.postAtTime({
+        isRestarting = true
+        mainHandler.postDelayed({
             isRestarting = false
             if (isContinuousMode) {
                 startListening(activeLocale)
             }
-        }, RESTART_TOKEN, android.os.SystemClock.uptimeMillis() + delayMs)
+        }, RESTART_TOKEN, delayMs)
     }
 
     companion object {

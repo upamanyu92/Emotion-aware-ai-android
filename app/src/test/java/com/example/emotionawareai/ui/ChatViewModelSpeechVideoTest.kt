@@ -195,6 +195,24 @@ class ChatViewModelSpeechVideoTest {
         verify(atLeast = 1) { voiceProcessor.stopContinuousListening() }
         coVerify { memoryManager.setContinuousConversationEnabled(false) }
     }
-}
 
+    @Test
+    fun `toggle continuous conversation off then on restarts continuous listening`() = runTest {
+        advanceUntilIdle()
+
+        viewModel.onPermissionsResult(cameraGranted = false, audioGranted = true)
+
+        // Toggle off
+        viewModel.toggleContinuousConversation()
+        advanceUntilIdle()
+        verify(atLeast = 1) { voiceProcessor.stopContinuousListening() }
+        coVerify { memoryManager.setContinuousConversationEnabled(false) }
+
+        // Toggle back on
+        viewModel.toggleContinuousConversation()
+        advanceUntilIdle()
+        verify(atLeast = 2) { voiceProcessor.startContinuousListening(any()) }
+        coVerify { memoryManager.setContinuousConversationEnabled(true) }
+    }
+}
 
