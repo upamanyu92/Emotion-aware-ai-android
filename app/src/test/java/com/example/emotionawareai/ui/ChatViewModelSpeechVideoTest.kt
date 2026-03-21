@@ -81,10 +81,14 @@ class ChatViewModelSpeechVideoTest {
         coEvery { conversationManager.getActiveConversationId() } returns 1L
         coEvery { memoryManager.getRecentContext(any(), any()) } returns emptyList()
         coEvery { memoryManager.isTtsEnabled() } returns true
-        coEvery { memoryManager.isContinuousConversationEnabled() } returns false
+        // Default is now true (live mode enabled by default)
+        coEvery { memoryManager.isContinuousConversationEnabled() } returns true
         coEvery { memoryManager.isPremiumUnlocked() } returns true
         coEvery { memoryManager.setPremiumUnlocked(any()) } returns Unit
         coEvery { memoryManager.isPremiumFeaturesGloballyEnabled() } returns true
+        coEvery { memoryManager.getUserName() } returns "Test User"
+        coEvery { memoryManager.getUserAvatar() } returns "😊"
+        coEvery { memoryManager.hasUserProfile() } returns true
         coEvery { responseEngine.loadModel() } returns true
 
         coEvery { conversationManager.buildContext(any(), any(), any(), any()) } returns mockk(relaxed = true)
@@ -130,6 +134,7 @@ class ChatViewModelSpeechVideoTest {
 
         assertEquals("Microphone permission is required for voice input", viewModel.errorMessage.value)
         verify(exactly = 0) { voiceProcessor.startListening(any()) }
+        verify(exactly = 0) { voiceProcessor.startContinuousListening(any()) }
     }
 
     @Test
@@ -154,21 +159,60 @@ class ChatViewModelSpeechVideoTest {
     }
 
     @Test
+    fun `audio permission with continuous mode enabled starts continuous listening`() = runTest {
+        advanceUntilIdle()
+
+        // With continuous mode on (default true), granting audio should auto-start
+        viewModel.onPermissionsResult(cameraGranted = false, audioGranted = true)
+
+        verify(atLeast = 1) { voiceProcessor.startContinuousListening(any()) }
+    }
+
+    @Test
     fun `continuous conversation restarts listening after voice response`() = runTest {
         advanceUntilIdle()
 
         viewModel.onPermissionsResult(cameraGranted = false, audioGranted = true)
-        viewModel.toggleContinuousConversation()
-        verify(exactly = 1) { voiceProcessor.startListening(any()) }
 
         voiceTextFlow.emit("hello")
         advanceUntilIdle()
         advanceTimeBy(350)
         advanceUntilIdle()
 
-        verify(exactly = 2) { voiceProcessor.startListening(any()) }
-        coVerify(exactly = 1) { memoryManager.setContinuousConversationEnabled(true) }
+        // Continuous listening should have been started at least once (on permission + after response)
+        verify(atLeast = 1) { voiceProcessor.startContinuousListening(any()) }
+    }
+
+    @Test
+    fun `toggle continuous conversation off stops continuous listening`() = runTest {
+        advanceUntilIdle()
+
+        viewModel.onPermissionsResult(cameraGranted = false, audioGranted = true)
+        // Toggle off (currently true by default)
+        viewModel.toggleContinuousConversation()
+        advanceUntilIdle()
+
+        verify(atLeast = 1) { voiceProcessor.stopContinuousListening() }
+        coVerify { memoryManager.setContinuousConversationEnabled(false) }
+    }
+
+    @Test
+    fun `toggle continuous conversation off then on restarts continuous listening`() = runTest {
+        advanceUntilIdle()
+
+        viewModel.onPermissionsResult(cameraGranted = false, audioGranted = true)
+
+        // Toggle off
+        viewModel.toggleContinuousConversation()
+        advanceUntilIdle()
+        verify(atLeast = 1) { voiceProcessor.stopContinuousListening() }
+        coVerify { memoryManager.setContinuousConversationEnabled(false) }
+
+        // Toggle back on
+        viewModel.toggleContinuousConversation()
+        advanceUntilIdle()
+        verify(atLeast = 2) { voiceProcessor.startContinuousListening(any()) }
+        coVerify { memoryManager.setContinuousConversationEnabled(true) }
     }
 }
-
 

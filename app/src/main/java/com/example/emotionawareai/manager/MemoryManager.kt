@@ -127,6 +127,31 @@ class MemoryManager @Inject constructor(
         )
     }
 
+    // ── User profile helpers ───────────────────────────────────────────────────
+
+    /** Returns the saved user display name, or empty string if not set. */
+    suspend fun getUserName(): String =
+        getPreference(UserPreferenceEntity.KEY_USER_NAME, "")
+
+    /** Returns the saved user avatar emoji, defaulting to 😊. */
+    suspend fun getUserAvatar(): String =
+        getPreference(UserPreferenceEntity.KEY_USER_AVATAR, "😊")
+
+    /** Returns true when the user has completed the login/profile setup. */
+    suspend fun hasUserProfile(): Boolean = getUserName().isNotBlank()
+
+    /** Persists the user's display name. */
+    suspend fun setUserName(name: String) {
+        Log.i(TAG, "setUserName")
+        savePreference(UserPreferenceEntity.KEY_USER_NAME, name.trim())
+    }
+
+    /** Persists the user's emoji avatar. */
+    suspend fun setUserAvatar(emoji: String) {
+        Log.i(TAG, "setUserAvatar: $emoji")
+        savePreference(UserPreferenceEntity.KEY_USER_AVATAR, emoji)
+    }
+
     /**
      * Returns the dominant emotion across the last [limit] user messages.
      */
