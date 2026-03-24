@@ -81,6 +81,12 @@ class MemoryManager @Inject constructor(
     suspend fun isExportWithInsightsEnabled(): Boolean =
         getPreference(UserPreferenceEntity.KEY_EXPORT_WITH_INSIGHTS, "true").toBoolean()
 
+    suspend fun isCaptionsEnabled(): Boolean =
+        getPreference(UserPreferenceEntity.KEY_CAPTIONS_ENABLED, "true").toBoolean()
+
+    suspend fun isCameraPreviewVisible(): Boolean =
+        getPreference(UserPreferenceEntity.KEY_CAMERA_PREVIEW_VISIBLE, "true").toBoolean()
+
     suspend fun setTtsEnabled(enabled: Boolean) {
         Log.i(TAG, "setTtsEnabled: $enabled")
         savePreference(UserPreferenceEntity.KEY_TTS_ENABLED, enabled.toString())
@@ -109,6 +115,16 @@ class MemoryManager @Inject constructor(
     suspend fun setExportWithInsightsEnabled(enabled: Boolean) {
         Log.i(TAG, "setExportWithInsightsEnabled: $enabled")
         savePreference(UserPreferenceEntity.KEY_EXPORT_WITH_INSIGHTS, enabled.toString())
+    }
+
+    suspend fun setCaptionsEnabled(enabled: Boolean) {
+        Log.i(TAG, "setCaptionsEnabled: $enabled")
+        savePreference(UserPreferenceEntity.KEY_CAPTIONS_ENABLED, enabled.toString())
+    }
+
+    suspend fun setCameraPreviewVisible(visible: Boolean) {
+        Log.i(TAG, "setCameraPreviewVisible: $visible")
+        savePreference(UserPreferenceEntity.KEY_CAMERA_PREVIEW_VISIBLE, visible.toString())
     }
 
     /** Returns whether premium features are globally enabled (remote kill-switch). Defaults true. */

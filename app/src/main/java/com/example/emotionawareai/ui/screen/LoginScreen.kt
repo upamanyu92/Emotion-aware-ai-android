@@ -1,5 +1,8 @@
 package com.example.emotionawareai.ui.screen
 
+import android.app.Activity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.EaseInOutCubic
 import androidx.compose.animation.core.LinearEasing
@@ -37,7 +40,9 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -56,6 +61,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -73,24 +79,55 @@ import com.example.emotionawareai.ui.theme.GradStart
 import com.example.emotionawareai.ui.theme.NeonCyan
 import com.example.emotionawareai.ui.theme.NeonGold
 import com.example.emotionawareai.ui.theme.NeonPurple
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
 
 private val AVATAR_OPTIONS = listOf("😊", "😎", "🧘", "🎯", "💡", "🌟", "🦁", "🐼", "🚀", "🎵")
 
 /**
  * Onboarding / login screen shown on first launch.
  *
- * Collects the user's display name and an emoji avatar.  Everything is stored
- * locally — no network call is ever made.
+ * Offers Google Sign-In, Apple Sign-In (via browser OAuth), and a local
+ * "continue without account" path. The selected display name and avatar are
+ * stored locally — no remote account data is retained by the app.
  *
- * @param onProfileCreated Called with (name, avatar) once the user taps "Get Started".
+ * @param onProfileCreated Called with (name, avatar) once the user proceeds.
+ * @param onAppleSignIn    Called when the user taps "Continue with Apple"; the
+ *                         caller is responsible for launching the Custom-Tabs
+ *                         flow and calling [onProfileCreated] on success.
  */
 @Composable
-fun LoginScreen(onProfileCreated: (name: String, avatar: String) -> Unit) {
+fun LoginScreen(
+    onProfileCreated: (name: String, avatar: String) -> Unit,
+    onAppleSignIn: () -> Unit = {}
+) {
     var name by remember { mutableStateOf("") }
     var selectedAvatar by remember { mutableStateOf(AVATAR_OPTIONS.first()) }
     var showContent by remember { mutableStateOf(false) }
+    var showLocalForm by remember { mutableStateOf(false) }
     val keyboard = LocalSoftwareKeyboardController.current
     val haptics = LocalHapticFeedback.current
+    val context = LocalContext.current
+
+    // Google Sign-In launcher
+    val googleSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+            try {
+                val account = task.getResult(ApiException::class.java)
+                val displayName = account?.displayName?.ifBlank { null }
+                    ?: account?.email?.substringBefore('@')
+                    ?: "User"
+                onProfileCreated(displayName, "😊")
+            } catch (_: ApiException) {
+                // Sign-in failed — fall through to local form
+                showLocalForm = true
+            }
+        }
+    }
 
     // Trigger content animation shortly after composition
     LaunchedEffect(Unit) { showContent = true }
@@ -196,180 +233,287 @@ fun LoginScreen(onProfileCreated: (name: String, avatar: String) -> Unit) {
                     textAlign = TextAlign.Center
                 )
 
-                Spacer(Modifier.height(40.dp))
+                Spacer(Modifier.height(36.dp))
 
-                // ── Avatar picker ────────────────────────────────────────────
-                Text(
-                    text = "Choose your avatar",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = NeonCyan,
-                    letterSpacing = 0.8.sp
-                )
-                Spacer(Modifier.height(14.dp))
-
-                // Selected avatar display
-                Box(
-                    modifier = Modifier
-                        .size(80.dp)
-                        .clip(CircleShape)
-                        .background(
-                            Brush.radialGradient(
-                                listOf(
-                                    NeonPurple.copy(alpha = 0.35f),
-                                    NeonCyan.copy(alpha = 0.15f)
-                                )
+                if (!showLocalForm) {
+                    // ── Social sign-in buttons ───────────────────────────────
+                    // Google Sign-In
+                    OutlinedButton(
+                        onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            val gso = GoogleSignInOptions.Builder(
+                                GoogleSignInOptions.DEFAULT_SIGN_IN
+                            ).requestEmail().build()
+                            val client = GoogleSignIn.getClient(context, gso)
+                            googleSignInLauncher.launch(client.signInIntent)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = Color.White
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp, NeonCyan.copy(alpha = 0.6f)
+                        )
+                    ) {
+                        Text(
+                            text = "🔵  Continue with Google",
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontWeight = FontWeight.Medium
                             )
                         )
-                        .border(2.dp, NeonPurple.copy(alpha = 0.7f), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(text = selectedAvatar, fontSize = 38.sp)
-                }
-
-                Spacer(Modifier.height(16.dp))
-
-                // Avatar grid
-                Row(
-                    modifier = Modifier.wrapContentWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    AVATAR_OPTIONS.take(5).forEach { emoji ->
-                        AvatarChip(
-                            emoji = emoji,
-                            selected = selectedAvatar == emoji,
-                            onClick = {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                selectedAvatar = emoji
-                            }
-                        )
                     }
-                }
-                Spacer(Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.wrapContentWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    AVATAR_OPTIONS.drop(5).forEach { emoji ->
-                        AvatarChip(
-                            emoji = emoji,
-                            selected = selectedAvatar == emoji,
-                            onClick = {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                selectedAvatar = emoji
-                            }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    // Apple Sign-In
+                    OutlinedButton(
+                        onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onAppleSignIn()
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = Color.White
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp, Color.White.copy(alpha = 0.4f)
                         )
-                    }
-                }
-
-                Spacer(Modifier.height(32.dp))
-
-                // ── Name input ───────────────────────────────────────────────
-                Text(
-                    text = "What should I call you?",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = NeonCyan,
-                    letterSpacing = 0.8.sp
-                )
-                Spacer(Modifier.height(10.dp))
-
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it.take(30) },
-                    placeholder = {
+                    ) {
                         Text(
-                            "Your first name",
-                            color = Color.White.copy(alpha = 0.35f)
+                            text = "🍎  Continue with Apple",
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontWeight = FontWeight.Medium
+                            )
                         )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        capitalization = KeyboardCapitalization.Words,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onDone = {
+                    }
+
+                    Spacer(Modifier.height(20.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        HorizontalDivider(
+                            modifier = Modifier.weight(1f),
+                            color = Color.White.copy(alpha = 0.2f)
+                        )
+                        Text(
+                            text = "or",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color.White.copy(alpha = 0.4f)
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.weight(1f),
+                            color = Color.White.copy(alpha = 0.2f)
+                        )
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+
+                    // Continue without account
+                    Button(
+                        onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            showLocalForm = true
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = GlassCard,
+                            contentColor = Color.White.copy(alpha = 0.75f)
+                        )
+                    ) {
+                        Text(
+                            text = "Continue without account",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        text = "Your data stays on your device.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.35f),
+                        textAlign = TextAlign.Center
+                    )
+                } else {
+                    // ── Local profile form ───────────────────────────────────
+                    // Avatar picker
+                    Text(
+                        text = "Choose your avatar",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = NeonCyan,
+                        letterSpacing = 0.8.sp
+                    )
+                    Spacer(Modifier.height(14.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .size(80.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.radialGradient(
+                                    listOf(
+                                        NeonPurple.copy(alpha = 0.35f),
+                                        NeonCyan.copy(alpha = 0.15f)
+                                    )
+                                )
+                            )
+                            .border(2.dp, NeonPurple.copy(alpha = 0.7f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(text = selectedAvatar, fontSize = 38.sp)
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+
+                    Row(
+                        modifier = Modifier.wrapContentWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        AVATAR_OPTIONS.take(5).forEach { emoji ->
+                            AvatarChip(
+                                emoji = emoji,
+                                selected = selectedAvatar == emoji,
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    selectedAvatar = emoji
+                                }
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.wrapContentWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        AVATAR_OPTIONS.drop(5).forEach { emoji ->
+                            AvatarChip(
+                                emoji = emoji,
+                                selected = selectedAvatar == emoji,
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    selectedAvatar = emoji
+                                }
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(32.dp))
+
+                    Text(
+                        text = "What should I call you?",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = NeonCyan,
+                        letterSpacing = 0.8.sp
+                    )
+                    Spacer(Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it.take(30) },
+                        placeholder = {
+                            Text(
+                                "Your first name",
+                                color = Color.White.copy(alpha = 0.35f)
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Words,
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                keyboard?.hide()
+                                val trimmedName = name.trim()
+                                if (trimmedName.isNotBlank()) {
+                                    onProfileCreated(trimmedName, selectedAvatar)
+                                }
+                            }
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = NeonPurple.copy(alpha = 0.8f),
+                            unfocusedBorderColor = GlassBorder,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White.copy(alpha = 0.85f),
+                            cursorColor = NeonCyan,
+                            focusedContainerColor = GlassCard,
+                            unfocusedContainerColor = Color(0x0DFFFFFF)
+                        )
+                    )
+
+                    Spacer(Modifier.height(28.dp))
+
+                    Button(
+                        onClick = {
                             keyboard?.hide()
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             val trimmedName = name.trim()
                             if (trimmedName.isNotBlank()) {
                                 onProfileCreated(trimmedName, selectedAvatar)
                             }
-                        }
-                    ),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = NeonPurple.copy(alpha = 0.8f),
-                        unfocusedBorderColor = GlassBorder,
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White.copy(alpha = 0.85f),
-                        cursorColor = NeonCyan,
-                        focusedContainerColor = GlassCard,
-                        unfocusedContainerColor = Color(0x0DFFFFFF)
-                    )
-                )
-
-                Spacer(Modifier.height(28.dp))
-
-                // ── Get Started CTA ──────────────────────────────────────────
-                Button(
-                    onClick = {
-                        keyboard?.hide()
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        val trimmedName = name.trim()
-                        if (trimmedName.isNotBlank()) {
-                            onProfileCreated(trimmedName, selectedAvatar)
-                        }
-                    },
-                    enabled = name.trim().isNotBlank(),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                        .scale(ctaScale),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.Transparent,
-                        disabledContainerColor = Color.Transparent
-                    )
-                ) {
-                    Box(
+                        },
+                        enabled = name.trim().isNotBlank(),
                         modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                if (name.trim().isNotBlank())
-                                    Brush.horizontalGradient(
-                                        listOf(NeonPurple, NeonCyan.copy(alpha = 0.8f))
-                                    )
-                                else
-                                    Brush.horizontalGradient(
-                                        listOf(
-                                            NeonPurple.copy(alpha = 0.25f),
-                                            NeonCyan.copy(alpha = 0.15f)
-                                        )
-                                    ),
-                                RoundedCornerShape(16.dp)
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "Get Started ✨",
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 0.5.sp
-                            ),
-                            color = Color.White
+                            .fillMaxWidth()
+                            .height(52.dp)
+                            .scale(ctaScale),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.Transparent,
+                            disabledContainerColor = Color.Transparent
                         )
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    if (name.trim().isNotBlank())
+                                        Brush.horizontalGradient(
+                                            listOf(NeonPurple, NeonCyan.copy(alpha = 0.8f))
+                                        )
+                                    else
+                                        Brush.horizontalGradient(
+                                            listOf(
+                                                NeonPurple.copy(alpha = 0.25f),
+                                                NeonCyan.copy(alpha = 0.15f)
+                                            )
+                                        ),
+                                    RoundedCornerShape(16.dp)
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Get Started ✨",
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.5.sp
+                                ),
+                                color = Color.White
+                            )
+                        }
                     }
+
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        text = "← Back",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = NeonCyan.copy(alpha = 0.6f),
+                        modifier = Modifier.clickable { showLocalForm = false }
+                    )
                 }
-
-                Spacer(Modifier.height(16.dp))
-
-                Text(
-                    text = "Everything stays on your device. No account needed.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.4f),
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
             }
         }
     }
@@ -404,3 +548,4 @@ private fun AvatarChip(
         Text(text = emoji, fontSize = 20.sp)
     }
 }
+

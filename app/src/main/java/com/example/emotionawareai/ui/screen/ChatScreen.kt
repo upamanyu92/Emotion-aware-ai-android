@@ -54,6 +54,12 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.VideocamOff
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.ClosedCaption
+import androidx.compose.material.icons.filled.ClosedCaptionDisabled
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.AssistChip
@@ -132,6 +138,9 @@ fun ChatScreen(viewModel: ChatViewModel) {
     val cameraGranted by viewModel.cameraPermissionGranted.collectAsStateWithLifecycle()
     val isTtsEnabled by viewModel.isTtsEnabled.collectAsStateWithLifecycle()
     val isContinuousConversationEnabled by viewModel.isContinuousConversationEnabled.collectAsStateWithLifecycle()
+    val isCameraEnabled by viewModel.isCameraEnabled.collectAsStateWithLifecycle()
+    val isCameraPreviewVisible by viewModel.isCameraPreviewVisible.collectAsStateWithLifecycle()
+    val isCaptionsEnabled by viewModel.isCaptionsEnabled.collectAsStateWithLifecycle()
     val isAiAgentActive by viewModel.isAiAgentActive.collectAsStateWithLifecycle()
     val toneInsight by viewModel.toneInsight.collectAsStateWithLifecycle()
     val isProThemeEnabled by viewModel.isProThemeEnabled.collectAsStateWithLifecycle()
@@ -362,7 +371,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
 
                 // ── Fixed camera preview (embedded, not floating) ─────────────
                 AnimatedVisibility(
-                    visible = cameraGranted,
+                    visible = cameraGranted && isCameraEnabled,
                     enter = expandVertically() + fadeIn(),
                     exit = shrinkVertically() + fadeOut()
                 ) {
@@ -387,6 +396,34 @@ fun ChatScreen(viewModel: ChatViewModel) {
                             modifier = Modifier.fillMaxSize(),
                             onBitmapFrame = viewModel::onCameraFrame
                         )
+                        // When preview is hidden, overlay an opaque surface so the
+                        // video feed is not visible — but CameraX keeps running for
+                        // emotion / activity analysis in the background.
+                        if (!isCameraPreviewVisible) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(GradStart.copy(alpha = 0.97f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                androidx.compose.foundation.layout.Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.VisibilityOff,
+                                        contentDescription = null,
+                                        tint = NeonCyan.copy(alpha = 0.7f),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text(
+                                        text = "Preview hidden • Camera active",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = NeonCyan.copy(alpha = 0.7f)
+                                    )
+                                }
+                            }
+                        }
                         // Glassmorphism header label
                         Row(
                             modifier = Modifier
@@ -401,12 +438,15 @@ fun ChatScreen(viewModel: ChatViewModel) {
                             Box(
                                 modifier = Modifier
                                     .size(6.dp)
-                                    .background(NeonCyan, CircleShape)
+                                    .background(
+                                        if (isCameraPreviewVisible) NeonCyan else NeonPurple,
+                                        CircleShape
+                                    )
                             )
                             Text(
-                                text = "LIVE",
+                                text = if (isCameraPreviewVisible) "LIVE" else "LIVE · HIDDEN",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = NeonCyan
+                                color = if (isCameraPreviewVisible) NeonCyan else NeonPurple
                             )
                         }
                         EmotionIndicator(
@@ -453,7 +493,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
 
                 // ── Activity caption strip ───────────────────────────────────
                 AnimatedVisibility(
-                    visible = cameraGranted && activityCaptions.isNotEmpty(),
+                    visible = cameraGranted && isCaptionsEnabled && activityCaptions.isNotEmpty(),
                     enter = fadeIn(),
                     exit = fadeOut()
                 ) {
@@ -484,9 +524,60 @@ fun ChatScreen(viewModel: ChatViewModel) {
                         }
                     )
 
+                    // Camera on/off toggle
                     NeoChip(
-                        label = if (cameraGranted) "Camera on" else "Camera off",
-                        active = cameraGranted
+                        label = if (isCameraEnabled) "Cam on" else "Cam off",
+                        icon = {
+                            Icon(
+                                imageVector = if (isCameraEnabled) Icons.Filled.Videocam
+                                              else Icons.Filled.VideocamOff,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        },
+                        active = isCameraEnabled && cameraGranted,
+                        onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            viewModel.toggleCamera()
+                        }
+                    )
+
+                    // Camera preview hide/show toggle (only relevant when camera is on)
+                    if (isCameraEnabled && cameraGranted) {
+                        NeoChip(
+                            label = if (isCameraPreviewVisible) "Preview" else "Hidden",
+                            icon = {
+                                Icon(
+                                    imageVector = if (isCameraPreviewVisible) Icons.Filled.Visibility
+                                                  else Icons.Filled.VisibilityOff,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            },
+                            active = isCameraPreviewVisible,
+                            onClick = {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                viewModel.toggleCameraPreviewVisible()
+                            }
+                        )
+                    }
+
+                    // Captions toggle
+                    NeoChip(
+                        label = if (isCaptionsEnabled) "Captions" else "No captions",
+                        icon = {
+                            Icon(
+                                imageVector = if (isCaptionsEnabled) Icons.Filled.ClosedCaption
+                                              else Icons.Filled.ClosedCaptionDisabled,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        },
+                        active = isCaptionsEnabled,
+                        onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            viewModel.toggleCaptions()
+                        }
                     )
 
                     NeoChip(

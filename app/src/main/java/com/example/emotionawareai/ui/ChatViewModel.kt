@@ -92,6 +92,15 @@ class ChatViewModel @Inject constructor(
     val isContinuousConversationEnabled: StateFlow<Boolean> =
         _isContinuousConversationEnabled.asStateFlow()
 
+    private val _isCameraEnabled = MutableStateFlow(true)
+    val isCameraEnabled: StateFlow<Boolean> = _isCameraEnabled.asStateFlow()
+
+    private val _isCameraPreviewVisible = MutableStateFlow(true)
+    val isCameraPreviewVisible: StateFlow<Boolean> = _isCameraPreviewVisible.asStateFlow()
+
+    private val _isCaptionsEnabled = MutableStateFlow(true)
+    val isCaptionsEnabled: StateFlow<Boolean> = _isCaptionsEnabled.asStateFlow()
+
     private val _isPremiumUser = MutableStateFlow(false)
     val isPremiumUser: StateFlow<Boolean> = _isPremiumUser.asStateFlow()
 
@@ -175,6 +184,12 @@ class ChatViewModel @Inject constructor(
         // Load the persisted continuous conversation preference; default is true (live mode).
         val continuousEnabled = memoryManager.isContinuousConversationEnabled()
         _isContinuousConversationEnabled.update { continuousEnabled }
+
+        // Load camera and captions preferences
+        _isCameraEnabled.update { memoryManager.isCameraEnabled() }
+        _isCameraPreviewVisible.update { memoryManager.isCameraPreviewVisible() }
+        _isCaptionsEnabled.update { memoryManager.isCaptionsEnabled() }
+
         _isPremiumUser.update { memoryManager.isPremiumUnlocked() }
         _isProThemeEnabled.update { memoryManager.isProThemeEnabled() }
         _isExportWithInsights.update { memoryManager.isExportWithInsightsEnabled() }
@@ -401,6 +416,42 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    fun toggleCamera() {
+        val enabled = !_isCameraEnabled.value
+        _isCameraEnabled.update { enabled }
+        viewModelScope.launch {
+            memoryManager.setCameraEnabled(enabled)
+        }
+        if (!enabled) {
+            // Camera turned off — stop analyzers and clear emotion/caption state
+            emotionDetector.release()
+            activityAnalyzer.release()
+            _currentEmotion.update { Emotion.NEUTRAL }
+            _activityCaptions.update { emptyList() }
+            updateAiActiveState()
+        } else if (_cameraPermissionGranted.value) {
+            emotionDetector.initialize()
+            activityAnalyzer.initialize()
+            updateAiActiveState()
+        }
+    }
+
+    fun toggleCameraPreviewVisible() {
+        val visible = !_isCameraPreviewVisible.value
+        _isCameraPreviewVisible.update { visible }
+        viewModelScope.launch {
+            memoryManager.setCameraPreviewVisible(visible)
+        }
+    }
+
+    fun toggleCaptions() {
+        val enabled = !_isCaptionsEnabled.value
+        _isCaptionsEnabled.update { enabled }
+        viewModelScope.launch {
+            memoryManager.setCaptionsEnabled(enabled)
+        }
+    }
+
     fun toggleContinuousConversation() {
         if (!hasPremiumFeature(PremiumFeature.CONTINUOUS_CONVERSATION)) {
             _errorMessage.update { "Live conversation features are currently disabled." }
@@ -525,7 +576,7 @@ class ChatViewModel @Inject constructor(
         _audioPermissionGranted.update { audioGranted }
         updateAiActiveState()
 
-        if (cameraGranted) {
+        if (cameraGranted && _isCameraEnabled.value) {
             emotionDetector.initialize()
             activityAnalyzer.initialize()
         }
