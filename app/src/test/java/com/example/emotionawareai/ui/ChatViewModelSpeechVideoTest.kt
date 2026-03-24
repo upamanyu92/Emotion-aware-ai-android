@@ -7,7 +7,9 @@ import com.example.emotionawareai.domain.model.ActivityCaption
 import com.example.emotionawareai.billing.BillingManager
 import com.example.emotionawareai.engine.ActivityAnalyzer
 import com.example.emotionawareai.engine.EmotionDetector
+import com.example.emotionawareai.data.database.MoodCheckInDao
 import com.example.emotionawareai.manager.ConversationManager
+import com.example.emotionawareai.manager.InsightsGenerator
 import com.example.emotionawareai.manager.MemoryManager
 import com.example.emotionawareai.manager.ResponseEngine
 import com.example.emotionawareai.voice.VoiceError
@@ -53,6 +55,8 @@ class ChatViewModelSpeechVideoTest {
     private lateinit var memoryManager: MemoryManager
     private lateinit var audioToneAnalyzer: AudioToneAnalyzer
     private lateinit var billingManager: BillingManager
+    private lateinit var moodCheckInDao: MoodCheckInDao
+    private lateinit var insightsGenerator: InsightsGenerator
 
     private lateinit var viewModel: ChatViewModel
 
@@ -78,6 +82,11 @@ class ChatViewModelSpeechVideoTest {
         memoryManager = mockk(relaxed = true)
         audioToneAnalyzer = mockk(relaxed = true)
         billingManager = mockk(relaxed = true)
+        moodCheckInDao = mockk(relaxed = true)
+        insightsGenerator = mockk(relaxed = true)
+
+        coEvery { insightsGenerator.getLatestInsight() } returns null
+        every { insightsGenerator.observeInsights() } returns flowOf(emptyList())
 
         coEvery { conversationManager.ensureConversation() } returns 1L
         coEvery { conversationManager.getActiveConversationId() } returns 1L
