@@ -42,6 +42,39 @@ jobs:
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > "${{ runner.temp }}/release.keystore"
           echo "KEYSTORE_FILE=${{ runner.temp }}/release.keystore" >> "$GITHUB_ENV"
 
+      # ── Normalize keystore format ─────────────────────────────────────────
+      # Modern JDK 9+ keystores use AES-256 PKCS12 encryption with extended
+      # ASN.1 tags (tag > 30) that Android build-tools' BouncyCastle cannot
+      # parse. Converting to JKS avoids this incompatibility entirely.
+      - name: Normalize keystore to JKS format
+        env:
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          echo "::notice::Converting keystore to JKS for Android build-tools compatibility"
+          if keytool -importkeystore \
+            -srckeystore "${{ runner.temp }}/release.keystore" \
+            -destkeystore "${{ runner.temp }}/release-jks.keystore" \
+            -deststoretype JKS \
+            -srcstorepass "${KEYSTORE_PASS}" \
+            -deststorepass "${KEYSTORE_PASS}" \
+            -noprompt 2>&1; then
+            # Verify the converted keystore is valid before replacing the original
+            if keytool -list \
+              -keystore "${{ runner.temp }}/release-jks.keystore" \
+              -storepass "${KEYSTORE_PASS}" \
+              -storetype JKS > /dev/null 2>&1; then
+              mv "${{ runner.temp }}/release-jks.keystore" "${{ runner.temp }}/release.keystore"
+              echo "KEYSTORE_TYPE=JKS" >> "$GITHUB_ENV"
+              echo "::notice::Keystore successfully converted and validated as JKS format"
+            else
+              rm -f "${{ runner.temp }}/release-jks.keystore"
+              echo "::warning::JKS keystore validation failed; using original keystore"
+            fi
+          else
+            rm -f "${{ runner.temp }}/release-jks.keystore"
+            echo "::warning::JKS conversion failed; using original keystore format"
+          fi
+
       # ── Run unit tests ────────────────────────────────────────────────────
       - name: Run unit tests
         run: |
@@ -70,6 +103,7 @@ jobs:
             -e KEYSTORE_PASSWORD="${{ secrets.KEYSTORE_PASSWORD }}" \
             -e KEY_ALIAS="${{ secrets.KEY_ALIAS }}" \
             -e KEY_PASSWORD="${{ secrets.KEY_PASSWORD }}" \
+            -e KEYSTORE_TYPE="${{ env.KEYSTORE_TYPE }}" \
             -w /workspace \
             android-builder:release \
             bash -c "chmod +x gradlew && ./gradlew assembleRelease bundleRelease --stacktrace 2>&1"
