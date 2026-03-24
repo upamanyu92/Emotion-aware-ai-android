@@ -5,6 +5,8 @@ import com.example.emotionawareai.domain.model.Emotion
 import com.example.emotionawareai.domain.model.MessageRole
 import com.example.emotionawareai.domain.repository.ConversationRepository
 import com.example.emotionawareai.manager.ConversationManager
+import com.example.emotionawareai.manager.MemoryManager
+import com.example.emotionawareai.domain.model.SessionGoal
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -17,12 +19,15 @@ import org.junit.Test
 class ConversationManagerTest {
 
     private lateinit var repository: ConversationRepository
+    private lateinit var memoryManager: MemoryManager
     private lateinit var manager: ConversationManager
 
     @Before
     fun setUp() {
         repository = mockk(relaxed = true)
-        manager = ConversationManager(repository)
+        memoryManager = mockk(relaxed = true)
+        coEvery { memoryManager.getActiveGoals() } returns emptyList()
+        manager = ConversationManager(repository, memoryManager)
     }
 
     @Test

@@ -4,12 +4,16 @@ import android.content.Context
 import androidx.room.Room
 import com.example.emotionawareai.data.database.AppDatabase
 import com.example.emotionawareai.data.database.ConversationDao
+import com.example.emotionawareai.data.database.MoodCheckInDao
+import com.example.emotionawareai.data.database.SessionGoalDao
 import com.example.emotionawareai.data.database.UserPreferenceDao
+import com.example.emotionawareai.data.database.WeeklyInsightDao
 import com.example.emotionawareai.domain.repository.ConversationRepository
 import com.example.emotionawareai.engine.ActivityAnalyzer
 import com.example.emotionawareai.engine.EmotionDetector
 import com.example.emotionawareai.engine.LLMEngine
 import com.example.emotionawareai.manager.ConversationManager
+import com.example.emotionawareai.manager.InsightsGenerator
 import com.example.emotionawareai.manager.MemoryManager
 import com.example.emotionawareai.manager.ResponseEngine
 import com.example.emotionawareai.voice.VoiceProcessor
@@ -87,12 +91,38 @@ object AppModule {
     @Provides
     @Singleton
     fun provideConversationManager(
-        repository: ConversationRepository
-    ): ConversationManager = ConversationManager(repository)
+        repository: ConversationRepository,
+        memoryManager: MemoryManager
+    ): ConversationManager = ConversationManager(repository, memoryManager)
 
     @Provides
     @Singleton
     fun provideMemoryManager(
+        repository: ConversationRepository,
+        sessionGoalDao: SessionGoalDao
+    ): MemoryManager = MemoryManager(repository, sessionGoalDao)
+
+    @Provides
+    @Singleton
+    fun provideMoodCheckInDao(db: AppDatabase): MoodCheckInDao =
+        db.moodCheckInDao()
+
+    @Provides
+    @Singleton
+    fun provideSessionGoalDao(db: AppDatabase): SessionGoalDao =
+        db.sessionGoalDao()
+
+    @Provides
+    @Singleton
+    fun provideWeeklyInsightDao(db: AppDatabase): WeeklyInsightDao =
+        db.weeklyInsightDao()
+
+    @Provides
+    @Singleton
+    fun provideInsightsGenerator(
+        moodCheckInDao: MoodCheckInDao,
+        sessionGoalDao: SessionGoalDao,
+        weeklyInsightDao: WeeklyInsightDao,
         repository: ConversationRepository
-    ): MemoryManager = MemoryManager(repository)
+    ): InsightsGenerator = InsightsGenerator(moodCheckInDao, sessionGoalDao, weeklyInsightDao, repository)
 }

@@ -20,7 +20,8 @@ import javax.inject.Singleton
  */
 @Singleton
 class ConversationManager @Inject constructor(
-    private val repository: ConversationRepository
+    private val repository: ConversationRepository,
+    private val memoryManager: MemoryManager
 ) {
     private var activeConversationId: Long = -1L
 
@@ -52,6 +53,7 @@ class ConversationManager @Inject constructor(
         )
         val style = runCatching { ResponseStyle.valueOf(styleString) }
             .getOrDefault(ResponseStyle.EMPATHETIC)
+        val goals = memoryManager.getActiveGoals().map { it.title }
 
         Log.d(TAG, "buildContext: convId=$convId, emotion=$emotion, audioEmotion=$audioToneEmotion, " +
             "style=$style, historySize=${history.size}, messageLength=${userMessage.length}")
@@ -62,7 +64,8 @@ class ConversationManager @Inject constructor(
             detectedEmotion = emotion,
             audioToneEmotion = audioToneEmotion,
             recentHistory = history,
-            systemStyle = style
+            systemStyle = style,
+            userGoals = goals
         )
     }
 
