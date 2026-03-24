@@ -134,6 +134,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
     val isListening by viewModel.isListening.collectAsStateWithLifecycle()
     val isGenerating by viewModel.isGenerating.collectAsStateWithLifecycle()
     val isModelLoaded by viewModel.isModelLoaded.collectAsStateWithLifecycle()
+    val isModelAvailable by viewModel.isModelAvailable.collectAsStateWithLifecycle()
     val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
     val cameraGranted by viewModel.cameraPermissionGranted.collectAsStateWithLifecycle()
     val isTtsEnabled by viewModel.isTtsEnabled.collectAsStateWithLifecycle()
@@ -368,6 +369,64 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     userName = userName,
                     isListening = isListening
                 )
+
+                // ── LLM model setup banner ────────────────────────────────────
+                AnimatedVisibility(
+                    visible = !isModelAvailable,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(
+                                        NeonPurple.copy(alpha = 0.25f),
+                                        GradMid1.copy(alpha = 0.35f)
+                                    )
+                                )
+                            )
+                            .border(
+                                width = 1.dp,
+                                brush = Brush.horizontalGradient(
+                                    listOf(NeonPurple.copy(alpha = 0.6f), NeonCyan.copy(alpha = 0.4f))
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Bolt,
+                            contentDescription = null,
+                            tint = NeonPurple,
+                            modifier = Modifier
+                                .size(16.dp)
+                                .padding(top = 2.dp)
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = "Local AI model not installed",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = NeonPurple
+                            )
+                            Text(
+                                text = "Using preview responses. Copy a .gguf model to:",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.7f)
+                            )
+                            Text(
+                                text = viewModel.getModelFilePath(),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = NeonCyan.copy(alpha = 0.9f)
+                            )
+                        }
+                    }
+                }
 
                 // ── Fixed camera preview (embedded, not floating) ─────────────
                 AnimatedVisibility(

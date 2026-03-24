@@ -23,6 +23,7 @@ mockk = "1.13.11"
 kotlinxCoroutinesTest = "1.8.1"
 archCoreTesting = "2.2.0"
 billing = "7.1.1"
+playServicesAuth = "21.3.0"
 
 [libraries]
 # AndroidX Core
@@ -73,6 +74,7 @@ kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-cor
 
 # Payments
 play-billing = { group = "com.android.billingclient", name = "billing-ktx", version.ref = "billing" }
+play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "playServicesAuth" }
 
 # Testing
 junit = { group = "junit", name = "junit", version.ref = "junitVersion" }

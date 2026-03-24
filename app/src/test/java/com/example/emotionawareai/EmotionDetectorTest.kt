@@ -89,4 +89,15 @@ class EmotionDetectorTest {
         assert(assistMsg.isFromAssistant)
         assert(!assistMsg.isFromUser)
     }
+
+    @Test
+    fun `Emotion UNKNOWN is distinct from NEUTRAL and allows audio-tone fallback`() {
+        // UNKNOWN must be a separate value from NEUTRAL so the effective-emotion
+        // logic in ChatViewModel can distinguish "not yet detected" from a genuinely
+        // detected neutral face — enabling audio-tone emotion to take over when no
+        // face is visible.
+        assert(Emotion.UNKNOWN != Emotion.NEUTRAL) {
+            "UNKNOWN and NEUTRAL must be distinct Emotion values"
+        }
+    }
 }

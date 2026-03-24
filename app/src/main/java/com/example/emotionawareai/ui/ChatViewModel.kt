@@ -52,7 +52,7 @@ class ChatViewModel @Inject constructor(
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
 
-    private val _currentEmotion = MutableStateFlow(Emotion.NEUTRAL)
+    private val _currentEmotion = MutableStateFlow(Emotion.UNKNOWN)
     val currentEmotion: StateFlow<Emotion> = _currentEmotion.asStateFlow()
 
     private val _audioToneEmotion = MutableStateFlow(Emotion.UNKNOWN)
@@ -75,6 +75,9 @@ class ChatViewModel @Inject constructor(
 
     private val _isModelLoaded = MutableStateFlow(false)
     val isModelLoaded: StateFlow<Boolean> = _isModelLoaded.asStateFlow()
+
+    private val _isModelAvailable = MutableStateFlow(false)
+    val isModelAvailable: StateFlow<Boolean> = _isModelAvailable.asStateFlow()
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
@@ -205,10 +208,11 @@ class ChatViewModel @Inject constructor(
         _hasUserProfile.update { name.isNotBlank() }
 
         viewModelScope.launch(Dispatchers.IO) {
+            _isModelAvailable.update { responseEngine.isModelFileAvailable() }
             val loaded = responseEngine.loadModel()
             _isModelLoaded.update { loaded }
             updateAiActiveState()
-            Log.i(TAG, "Model loaded: $loaded")
+            Log.i(TAG, "Model available: ${_isModelAvailable.value}, loaded: $loaded")
         }
     }
 
@@ -335,15 +339,20 @@ class ChatViewModel @Inject constructor(
         _messages.update { it + userMessage }
 
         generationJob = viewModelScope.launch {
-            conversationManager.saveMessage(userMessage)
             _isGenerating.update { true }
 
+            // Build context BEFORE saving the user message so that the current
+            // user turn does not appear in the retrieved history (which would
+            // cause it to be echoed in both [CONTEXT] and [USER] prompt sections).
             val context = conversationManager.buildContext(
                 userMessage = text.trim(),
                 emotion = _effectiveEmotion.value,
                 audioToneEmotion = _audioToneEmotion.value,
                 historyLimit = if (_isPremiumUser.value) 20 else 6
             )
+
+            // Persist the user message only after history has been fetched.
+            conversationManager.saveMessage(userMessage)
 
             val streamingMessage = ChatMessage(
                 id = ++messageIdCounter,
@@ -600,6 +609,9 @@ class ChatViewModel @Inject constructor(
     fun clearError() {
         _errorMessage.update { null }
     }
+
+    /** Returns the expected on-device path for the LLM model file. */
+    fun getModelFilePath(): String = responseEngine.modelFilePath()
 
     fun cancelGeneration() {
         Log.i(TAG, "cancelGeneration")

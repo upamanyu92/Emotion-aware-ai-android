@@ -92,6 +92,18 @@ class ResponseEngine @Inject constructor(
         llmEngine.loadModel()
     }
 
+    /**
+     * Returns `true` if the model file is present on-disk (without loading it).
+     * Delegates to [LLMEngine.isModelFileAvailable].
+     */
+    fun isModelFileAvailable(): Boolean = llmEngine.isModelFileAvailable()
+
+    /**
+     * The expected on-device path for the model file.
+     * Expose this to the user for setup instructions.
+     */
+    fun modelFilePath(): String = llmEngine.modelFilePath()
+
     fun release() {
         tts?.stop()
         tts?.shutdown()

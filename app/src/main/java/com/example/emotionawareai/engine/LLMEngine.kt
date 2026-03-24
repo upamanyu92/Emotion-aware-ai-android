@@ -27,6 +27,20 @@ class LLMEngine @Inject constructor(
     val isLoaded: Boolean get() = nativeHandle != 0L
 
     /**
+     * Returns `true` if the model file is present on-disk (without loading it).
+     * Use this to detect "stub mode" before calling [loadModel].
+     */
+    fun isModelFileAvailable(modelFileName: String = DEFAULT_MODEL_FILE): Boolean =
+        ModelFileLocator.isAvailable(context.filesDir, modelFileName)
+
+    /**
+     * The absolute path where the model file is expected.
+     * Display this to the user so they know where to place the .gguf file.
+     */
+    fun modelFilePath(modelFileName: String = DEFAULT_MODEL_FILE): String =
+        ModelFileLocator.path(context.filesDir, modelFileName)
+
+    /**
      * Loads a .gguf model file from the app's files directory.
      * Call this once on a background thread before generating responses.
      */
@@ -37,7 +51,9 @@ class LLMEngine @Inject constructor(
             val modelFile = File(context.filesDir, "models/$modelFileName")
             if (!modelFile.exists()) {
                 Log.w(TAG, "Model file not found at ${modelFile.absolutePath}; using stub mode")
-                // Allow stub mode — native code handles a missing file gracefully
+                // Keep nativeHandle at 0 so the rich Kotlin stub pool is used instead
+                // of the native hard-coded sentence.
+                return@withContext false
             }
 
             Log.i(TAG, "Loading model: ${modelFile.absolutePath}")
