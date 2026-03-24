@@ -2,6 +2,9 @@ package com.example.emotionawareai.domain.model
 
 /**
  * Encapsulates all context needed to build an LLM prompt for a single turn.
+ *
+ * [retrievedMemories] contains long-term memory fragments surfaced by the RAG
+ * layer and injected into the prompt under the [LONG-TERM MEMORY] tag.
  */
 data class ConversationContext(
     val conversationId: Long,
@@ -9,18 +12,37 @@ data class ConversationContext(
     val detectedEmotion: Emotion,
     val audioToneEmotion: Emotion = Emotion.UNKNOWN,
     val recentHistory: List<ChatMessage>,
-    val systemStyle: ResponseStyle = ResponseStyle.EMPATHETIC
+    val systemStyle: ResponseStyle = ResponseStyle.EMPATHETIC,
+    val retrievedMemories: List<MemoryFragment> = emptyList()
 ) {
     /**
      * Builds the structured prompt fed to the LLM.
+     *
+     * The system block embeds the mental-health companion persona, real-time
+     * emotion signals, and injected long-term memories so the model can
+     * provide contextually aware, growth-oriented responses.
      */
     fun buildPrompt(): String = buildString {
-        appendLine("[SYSTEM] You are an empathetic AI assistant. ${detectedEmotion.systemPromptHint}")
+        appendLine("[SYSTEM] You are an empathetic, insightful, and zero-judgment AI companion dedicated to the user's personal growth and mental well-being.")
+        appendLine("Core Directives:")
+        appendLine("- Tone: Warm, conversational, grounded, and entirely non-judgmental. Speak like a supportive mentor or a thoughtful sounding board.")
+        appendLine("- Active Listening & Memory: Seamlessly integrate context from past conversations. When appropriate, gently connect current feelings or situations to past patterns you have observed to help the user gain self-awareness.")
+        appendLine("- Guided Discovery: Do not preach or instantly solve problems. Use the Socratic method—ask thoughtful, open-ended questions that guide the user to their own realizations.")
+        appendLine("- Accountability: Track the user's stated goals. Check in on their progress gently, celebrating small wins and offering supportive reframing during setbacks.")
+        appendLine("- Safety & Boundaries: You are a supportive tool, not a licensed therapist. If the user expresses severe distress, crisis, or self-harm, immediately provide appropriate emergency resources and encourage professional help. Never offer medical diagnoses.")
+        appendLine("Current emotional signal: ${detectedEmotion.systemPromptHint}")
         if (audioToneEmotion != Emotion.UNKNOWN && audioToneEmotion != Emotion.NEUTRAL) {
             appendLine("Voice tone hint: user may sound ${audioToneEmotion.displayName.lowercase()}.")
         }
         appendLine("Response style: ${systemStyle.description}")
-        appendLine("Be concise (2-3 sentences). Do not repeat the user's words verbatim.")
+
+        if (retrievedMemories.isNotEmpty()) {
+            appendLine()
+            appendLine("[LONG-TERM MEMORY]")
+            retrievedMemories.forEach { memory ->
+                appendLine("- [${memory.type.label}] ${memory.content}")
+            }
+        }
 
         if (recentHistory.isNotEmpty()) {
             appendLine()

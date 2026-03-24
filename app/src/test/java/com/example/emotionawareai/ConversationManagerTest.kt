@@ -4,6 +4,7 @@ import com.example.emotionawareai.domain.model.ChatMessage
 import com.example.emotionawareai.domain.model.Emotion
 import com.example.emotionawareai.domain.model.MessageRole
 import com.example.emotionawareai.domain.repository.ConversationRepository
+import com.example.emotionawareai.domain.repository.IMemoryRepository
 import com.example.emotionawareai.manager.ConversationManager
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -17,12 +18,14 @@ import org.junit.Test
 class ConversationManagerTest {
 
     private lateinit var repository: ConversationRepository
+    private lateinit var memoryRepository: IMemoryRepository
     private lateinit var manager: ConversationManager
 
     @Before
     fun setUp() {
         repository = mockk(relaxed = true)
-        manager = ConversationManager(repository)
+        memoryRepository = mockk(relaxed = true)
+        manager = ConversationManager(repository, memoryRepository)
     }
 
     @Test
@@ -45,6 +48,7 @@ class ConversationManagerTest {
             ChatMessage(id = 2, content = "Hi there!", role = MessageRole.ASSISTANT)
         )
         coEvery { repository.getPreference(any(), any()) } returns "EMPATHETIC"
+        coEvery { memoryRepository.retrieveRelevant(any(), any()) } returns emptyList()
 
         val context = manager.buildContext("How are you?", Emotion.HAPPY)
 
@@ -59,6 +63,7 @@ class ConversationManagerTest {
         coEvery { repository.getOrCreateActiveConversation() } returns 1L
         coEvery { repository.getRecentMessages(any(), any()) } returns emptyList()
         coEvery { repository.getPreference(any(), any()) } returns "EMPATHETIC"
+        coEvery { memoryRepository.retrieveRelevant(any(), any()) } returns emptyList()
 
         val context = manager.buildContext("I'm feeling low", Emotion.SAD)
         val prompt = context.buildPrompt()
@@ -75,6 +80,7 @@ class ConversationManagerTest {
     fun `saveMessage delegates to repository`() = runTest {
         val convId = 5L
         coEvery { repository.getOrCreateActiveConversation() } returns convId
+        coEvery { memoryRepository.storeFragment(any()) } returns 1L
         val message = ChatMessage(
             content = "Test",
             role = MessageRole.USER,
@@ -105,6 +111,7 @@ class ConversationManagerTest {
         coEvery { repository.getOrCreateActiveConversation() } returns 1L
         coEvery { repository.getRecentMessages(any(), any()) } returns emptyList()
         coEvery { repository.getPreference(any(), any()) } returns "EMPATHETIC"
+        coEvery { memoryRepository.retrieveRelevant(any(), any()) } returns emptyList()
 
         val context = manager.buildContext("Hello AI", Emotion.NEUTRAL)
         val prompt = context.buildPrompt()
@@ -125,6 +132,7 @@ class ConversationManagerTest {
         coEvery { repository.getOrCreateActiveConversation() } returns convId
         coEvery { repository.getRecentMessages(convId, any()) } returns previousMessages
         coEvery { repository.getPreference(any(), any()) } returns "EMPATHETIC"
+        coEvery { memoryRepository.retrieveRelevant(any(), any()) } returns emptyList()
 
         val currentUserMessage = "What can you help me with?"
         val context = manager.buildContext(currentUserMessage, Emotion.NEUTRAL)
@@ -138,6 +146,31 @@ class ConversationManagerTest {
         assertEquals(2, context.recentHistory.size)
         assert(context.recentHistory.none { it.content == currentUserMessage }) {
             "Current user message must not appear in recentHistory"
+        }
+    }
+
+    @Test
+    fun `buildPrompt injects long-term memory section when memories present`() = runTest {
+        val convId = 1L
+        coEvery { repository.getOrCreateActiveConversation() } returns convId
+        coEvery { repository.getRecentMessages(any(), any()) } returns emptyList()
+        coEvery { repository.getPreference(any(), any()) } returns "EMPATHETIC"
+        coEvery { memoryRepository.retrieveRelevant(any(), any()) } returns listOf(
+            com.example.emotionawareai.domain.model.MemoryFragment(
+                content = "User wants to exercise daily",
+                keywords = listOf("exercise", "daily"),
+                type = com.example.emotionawareai.domain.model.MemoryFragmentType.GOAL
+            )
+        )
+
+        val context = manager.buildContext("How am I doing?", Emotion.NEUTRAL)
+        val prompt = context.buildPrompt()
+
+        assert(prompt.contains("[LONG-TERM MEMORY]")) {
+            "Prompt should contain long-term memory section"
+        }
+        assert(prompt.contains("exercise daily")) {
+            "Prompt should include retrieved memory content"
         }
     }
 }

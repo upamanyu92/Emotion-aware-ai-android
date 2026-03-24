@@ -4,8 +4,12 @@ import android.content.Context
 import androidx.room.Room
 import com.example.emotionawareai.data.database.AppDatabase
 import com.example.emotionawareai.data.database.ConversationDao
+import com.example.emotionawareai.data.database.MemoryFragmentDao
 import com.example.emotionawareai.data.database.UserPreferenceDao
+import com.example.emotionawareai.data.database.WeeklyInsightDao
 import com.example.emotionawareai.domain.repository.ConversationRepository
+import com.example.emotionawareai.domain.repository.IMemoryRepository
+import com.example.emotionawareai.domain.repository.MemoryFragmentRepository
 import com.example.emotionawareai.engine.ActivityAnalyzer
 import com.example.emotionawareai.engine.EmotionDetector
 import com.example.emotionawareai.engine.LLMEngine
@@ -33,6 +37,7 @@ object AppModule {
         AppDatabase::class.java,
         AppDatabase.DATABASE_NAME
     )
+        .addMigrations(AppDatabase.MIGRATION_1_2)
         .fallbackToDestructiveMigration()
         .build()
 
@@ -48,10 +53,27 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideMemoryFragmentDao(db: AppDatabase): MemoryFragmentDao =
+        db.memoryFragmentDao()
+
+    @Provides
+    @Singleton
+    fun provideWeeklyInsightDao(db: AppDatabase): WeeklyInsightDao =
+        db.weeklyInsightDao()
+
+    @Provides
+    @Singleton
     fun provideConversationRepository(
         conversationDao: ConversationDao,
         userPreferenceDao: UserPreferenceDao
     ): ConversationRepository = ConversationRepository(conversationDao, userPreferenceDao)
+
+    @Provides
+    @Singleton
+    fun provideMemoryRepository(
+        fragmentDao: MemoryFragmentDao,
+        insightDao: WeeklyInsightDao
+    ): IMemoryRepository = MemoryFragmentRepository(fragmentDao, insightDao)
 
     @Provides
     @Singleton
@@ -87,8 +109,9 @@ object AppModule {
     @Provides
     @Singleton
     fun provideConversationManager(
-        repository: ConversationRepository
-    ): ConversationManager = ConversationManager(repository)
+        repository: ConversationRepository,
+        memoryRepository: IMemoryRepository
+    ): ConversationManager = ConversationManager(repository, memoryRepository)
 
     @Provides
     @Singleton
