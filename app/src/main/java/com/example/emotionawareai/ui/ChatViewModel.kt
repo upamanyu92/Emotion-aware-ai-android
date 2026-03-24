@@ -15,7 +15,13 @@ import com.example.emotionawareai.billing.PremiumPlanType
 import com.example.emotionawareai.domain.model.PremiumFeature
 import com.example.emotionawareai.engine.ActivityAnalyzer
 import com.example.emotionawareai.engine.EmotionDetector
+import com.example.emotionawareai.data.database.MoodCheckInDao
+import com.example.emotionawareai.data.model.MoodCheckInEntity
+import com.example.emotionawareai.domain.model.GrowthArea
+import com.example.emotionawareai.domain.model.SessionGoal
+import com.example.emotionawareai.domain.model.WeeklyInsight
 import com.example.emotionawareai.manager.ConversationManager
+import com.example.emotionawareai.manager.InsightsGenerator
 import com.example.emotionawareai.manager.MemoryManager
 import com.example.emotionawareai.manager.ResponseEngine
 import com.example.emotionawareai.voice.AudioToneAnalyzer
@@ -44,7 +50,9 @@ class ChatViewModel @Inject constructor(
     private val voiceProcessor: VoiceProcessor,
     private val memoryManager: MemoryManager,
     private val audioToneAnalyzer: AudioToneAnalyzer,
-    private val billingManager: BillingManager
+    private val billingManager: BillingManager,
+    private val moodCheckInDao: MoodCheckInDao,
+    private val insightsGenerator: InsightsGenerator
 ) : ViewModel() {
 
     // ── UI State ─────────────────────────────────────────────────────────────
@@ -161,6 +169,32 @@ class ChatViewModel @Inject constructor(
     private var generationJob: Job? = null
     private var messageIdCounter = 0L
 
+    // ── Growth / insights / check-in state ───────────────────────────────────
+
+    private val _activeGoals = MutableStateFlow<List<SessionGoal>>(emptyList())
+    val activeGoals: StateFlow<List<SessionGoal>> = _activeGoals.asStateFlow()
+
+    private val _weeklyInsight = MutableStateFlow<WeeklyInsight?>(null)
+    val weeklyInsight: StateFlow<WeeklyInsight?> = _weeklyInsight.asStateFlow()
+
+    private val _insights = MutableStateFlow<List<WeeklyInsight>>(emptyList())
+    val insights: StateFlow<List<WeeklyInsight>> = _insights.asStateFlow()
+
+    private val _showDailyCheckIn = MutableStateFlow(false)
+    val showDailyCheckIn: StateFlow<Boolean> = _showDailyCheckIn.asStateFlow()
+
+    private val _showPrivacyNotice = MutableStateFlow(false)
+    val showPrivacyNotice: StateFlow<Boolean> = _showPrivacyNotice.asStateFlow()
+
+    private val _growthAreas = MutableStateFlow<List<GrowthArea>>(emptyList())
+    val growthAreas: StateFlow<List<GrowthArea>> = _growthAreas.asStateFlow()
+
+    private val _checkInFrequency = MutableStateFlow("daily")
+    val checkInFrequency: StateFlow<String> = _checkInFrequency.asStateFlow()
+
+    private val _isVoiceModeActive = MutableStateFlow(false)
+    val isVoiceModeActive: StateFlow<Boolean> = _isVoiceModeActive.asStateFlow()
+
     // ── Initialisation ────────────────────────────────────────────────────────
 
     init {
@@ -206,6 +240,32 @@ class ChatViewModel @Inject constructor(
         _userName.update { name }
         _userAvatar.update { memoryManager.getUserAvatar() }
         _hasUserProfile.update { name.isNotBlank() }
+
+        _growthAreas.update { memoryManager.getGrowthAreas() }
+        _checkInFrequency.update { memoryManager.getCheckInFrequency() }
+
+        // Load active goals
+        viewModelScope.launch {
+            memoryManager.observeActiveGoals().collect { goals ->
+                _activeGoals.update { goals }
+            }
+        }
+
+        // Load insights
+        viewModelScope.launch {
+            insightsGenerator.observeInsights().collect { list ->
+                _insights.update { list }
+                _weeklyInsight.update { list.firstOrNull() }
+            }
+        }
+
+        // Show privacy notice on first launch
+        if (!memoryManager.isPrivacyNoticeShown()) {
+            _showPrivacyNotice.update { true }
+        }
+
+        // Check if daily check-in should be shown
+        checkDailyCheckInNeeded()
 
         viewModelScope.launch(Dispatchers.IO) {
             _isModelAvailable.update { responseEngine.isModelFileAvailable() }
@@ -561,6 +621,95 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    fun dismissPrivacyNotice() {
+        _showPrivacyNotice.update { false }
+        viewModelScope.launch { memoryManager.setPrivacyNoticeShown() }
+    }
+
+    fun submitMoodCheckIn(moodScore: Int, note: String) {
+        _showDailyCheckIn.update { false }
+        viewModelScope.launch {
+            moodCheckInDao.insert(
+                MoodCheckInEntity(
+                    moodScore = moodScore,
+                    note = note,
+                    emotion = _effectiveEmotion.value.name
+                )
+            )
+            val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+                .format(java.util.Date())
+            memoryManager.setLastCheckInDate(today)
+        }
+    }
+
+    fun dismissDailyCheckIn() {
+        _showDailyCheckIn.update { false }
+    }
+
+    fun addGoal(title: String, area: GrowthArea) {
+        if (title.isBlank()) return
+        viewModelScope.launch {
+            memoryManager.addGoal(title, area)
+        }
+    }
+
+    fun archiveGoal(id: Long) {
+        viewModelScope.launch { memoryManager.archiveGoal(id) }
+    }
+
+    fun deleteGoal(id: Long) {
+        viewModelScope.launch { memoryManager.deleteGoal(id) }
+    }
+
+    fun updateGoalProgress(id: Long, note: String) {
+        viewModelScope.launch { memoryManager.updateGoalProgress(id, note) }
+    }
+
+    fun saveOnboardingPreferences(
+        areas: List<GrowthArea>,
+        frequency: String
+    ) {
+        _growthAreas.update { areas }
+        _checkInFrequency.update { frequency }
+        viewModelScope.launch {
+            memoryManager.setGrowthAreas(areas)
+            memoryManager.setCheckInFrequency(frequency)
+            memoryManager.setOnboardingComplete()
+        }
+    }
+
+    fun generateWeeklyInsight() {
+        viewModelScope.launch {
+            val convId = conversationManager.getActiveConversationId()
+            if (convId != -1L) {
+                insightsGenerator.generateCurrentWeekInsight(convId)
+            }
+        }
+    }
+
+    fun toggleVoiceMode() {
+        val newState = !_isVoiceModeActive.value
+        _isVoiceModeActive.update { newState }
+        if (newState && _audioPermissionGranted.value) {
+            if (_isContinuousConversationEnabled.value) {
+                voiceProcessor.startContinuousListening()
+            }
+        } else if (!newState) {
+            voiceProcessor.stopContinuousListening()
+        }
+    }
+
+    fun clearAllData() {
+        viewModelScope.launch {
+            startNewConversation()
+            _messages.update { emptyList() }
+            memoryManager.setUserName("")
+            memoryManager.setUserAvatar("😊")
+            _hasUserProfile.update { false }
+            _userName.update { "" }
+        }
+    }
+
     /**
      * Updates the user's display name.
      */
@@ -685,6 +834,30 @@ class ChatViewModel @Inject constructor(
 
     private fun hasPremiumFeature(feature: PremiumFeature): Boolean {
         return _premiumFeatureMatrix.value[feature] == true
+    }
+
+    private fun checkDailyCheckInNeeded() {
+        viewModelScope.launch {
+            val freq = _checkInFrequency.value
+            if (freq == "as_needed") return@launch
+            val lastDate = memoryManager.getLastCheckInDate()
+            val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+                .format(java.util.Date())
+            val shouldShow = when (freq) {
+                "weekly" -> {
+                    if (lastDate.isBlank()) true
+                    else {
+                        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+                        val last = runCatching { sdf.parse(lastDate)?.time ?: 0L }.getOrDefault(0L)
+                        System.currentTimeMillis() - last > java.util.concurrent.TimeUnit.DAYS.toMillis(7)
+                    }
+                }
+                else -> lastDate != today // "daily" or unknown
+            }
+            if (shouldShow) {
+                _showDailyCheckIn.update { true }
+            }
+        }
     }
 
     /**

@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.emotionawareai.ui.ChatViewModel
+import com.example.emotionawareai.ui.navigation.MainNavigation
 import com.example.emotionawareai.ui.screen.ChatScreen
 import com.example.emotionawareai.ui.screen.LoginScreen
 import com.example.emotionawareai.ui.theme.EmotionAwareAITheme
@@ -54,10 +55,13 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     when (hasProfile) {
-                        true -> ChatScreen(viewModel = viewModel)
+                        true -> MainNavigation(viewModel = viewModel)
                         false -> LoginScreen(
                             onProfileCreated = { name, avatar ->
                                 viewModel.saveUserProfile(name, avatar)
+                            },
+                            onOnboardingComplete = { areas, frequency ->
+                                viewModel.saveOnboardingPreferences(areas, frequency)
                             }
                         )
                         // null = still loading from preferences — show nothing (splash-like)
