@@ -6,6 +6,7 @@ import com.example.emotionawareai.data.database.WeeklyInsightDao
 import com.example.emotionawareai.data.model.MemoryFragmentEntity
 import com.example.emotionawareai.data.model.WeeklyInsightEntity
 import com.example.emotionawareai.domain.model.Emotion
+import com.example.emotionawareai.domain.model.KeywordExtractor
 import com.example.emotionawareai.domain.model.MemoryFragment
 import com.example.emotionawareai.domain.model.MemoryFragmentType
 import com.example.emotionawareai.domain.model.WeeklyInsight
@@ -20,15 +21,16 @@ import javax.inject.Singleton
  * Room-backed implementation of [IMemoryRepository].
  *
  * Retrieval uses a multi-keyword overlap scoring strategy:
- * 1. Tokenise the query into lower-case, stop-word-filtered terms.
- * 2. Query the DB with a LIKE search per keyword.
+ * 1. Tokenise the query via [KeywordExtractor].
+ * 2. Issue one DB query per keyword (LIKE search) and union the results.
  * 3. Score each fragment by how many unique query keywords it matches.
  * 4. Return the top-[limit] fragments by score (descending).
  *
  * This provides functional RAG without an on-device embedding model.
  * When an embedding model becomes available the [storeFragment] path can
  * populate a float-array embedding field and retrieval can switch to cosine
- * similarity.
+ * similarity.  A future upgrade path is to replace [MemoryFragmentDao] with
+ * an FTS5-backed DAO for sub-millisecond full-text retrieval at scale.
  */
 @Singleton
 class MemoryFragmentRepository @Inject constructor(
@@ -46,7 +48,7 @@ class MemoryFragmentRepository @Inject constructor(
 
     override suspend fun retrieveRelevant(query: String, limit: Int): List<MemoryFragment> =
         withContext(Dispatchers.IO) {
-            val keywords = extractKeywords(query)
+            val keywords = KeywordExtractor.extract(query)
             if (keywords.isEmpty()) return@withContext emptyList()
 
             // Collect candidate fragments for each keyword, then score by overlap.
@@ -96,29 +98,6 @@ class MemoryFragmentRepository @Inject constructor(
     override fun observeWeeklyInsights(): Flow<List<WeeklyInsight>> =
         insightDao.observeAll().map { list -> list.map { it.toDomain() } }
 
-    // ── Keyword extraction ────────────────────────────────────────────────────
-
-    /**
-     * Tokenises [text] into meaningful lower-case terms by stripping common
-     * English stop words and short tokens.
-     */
-    private fun extractKeywords(text: String): List<String> {
-        val stopWords = setOf(
-            "i", "a", "an", "the", "is", "it", "in", "on", "at", "to", "for",
-            "of", "and", "or", "but", "not", "my", "me", "we", "you", "he",
-            "she", "they", "this", "that", "was", "are", "be", "been", "being",
-            "have", "has", "do", "did", "will", "would", "could", "should",
-            "with", "from", "by", "as", "so", "if", "up", "out", "about",
-            "just", "like", "what", "how", "when", "where", "who", "which",
-            "can", "your", "its", "our", "their", "there", "then", "than"
-        )
-        return text.lowercase()
-            .replace(Regex("[^a-z0-9\\s]"), " ")
-            .split(Regex("\\s+"))
-            .filter { it.length > 2 && it !in stopWords }
-            .distinct()
-    }
-
     // ── Mappers ───────────────────────────────────────────────────────────────
 
     private fun MemoryFragment.toEntity(): MemoryFragmentEntity = MemoryFragmentEntity(
@@ -149,7 +128,8 @@ class MemoryFragmentRepository @Inject constructor(
         emotionFrequencies = emotionFrequencies.entries
             .joinToString(",", "{", "}") { (e, c) -> "\"${e.name}\":$c" },
         summary = summary,
-        trackedGoals = trackedGoals.joinToString(",", "[", "]") { "\"$it\"" },
+        trackedGoals = trackedGoals
+            .joinToString(",", "[", "]") { "\"${escapeJsonString(it)}\"" },
         createdAt = createdAt
     )
 
@@ -167,6 +147,13 @@ class MemoryFragmentRepository @Inject constructor(
         )
     }
 
+    /**
+     * Escapes double-quotes and backslashes in a string for safe JSON embedding.
+     * Only goals (user-supplied text) need escaping; emotion names are enum constants.
+     */
+    private fun escapeJsonString(value: String): String =
+        value.replace("\\", "\\\\").replace("\"", "\\\"")
+
     /** Parses a simple JSON object like {"HAPPY":5,"SAD":2} without a JSON library. */
     private fun parseEmotionFrequencies(json: String): Map<Emotion, Int> {
         val result = mutableMapOf<Emotion, Int>()
@@ -183,13 +170,19 @@ class MemoryFragmentRepository @Inject constructor(
         return result
     }
 
-    /** Parses a simple JSON array like ["goal1","goal2"] without a JSON library. */
+    /**
+     * Parses a simple JSON array like ["goal1","goal2"] without a JSON library.
+     * Handles escaped quotes (\\") produced by [escapeJsonString].
+     */
     private fun parseGoalsList(json: String): List<String> {
         val cleaned = json.trim().removeSurrounding("[", "]")
         if (cleaned.isBlank()) return emptyList()
-        return cleaned.split(",")
-            .map { it.trim().removeSurrounding("\"") }
+        // Split on `","` boundaries to handle commas inside quoted values.
+        return Regex(""""((?:[^"\\]|\\.)*)"""")
+            .findAll(cleaned)
+            .map { it.groupValues[1].replace("\\\"", "\"").replace("\\\\", "\\") }
             .filter { it.isNotBlank() }
+            .toList()
     }
 
     companion object {

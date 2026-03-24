@@ -5,6 +5,7 @@ import com.example.emotionawareai.data.model.UserPreferenceEntity
 import com.example.emotionawareai.domain.model.ChatMessage
 import com.example.emotionawareai.domain.model.ConversationContext
 import com.example.emotionawareai.domain.model.Emotion
+import com.example.emotionawareai.domain.model.KeywordExtractor
 import com.example.emotionawareai.domain.model.MemoryFragment
 import com.example.emotionawareai.domain.model.MemoryFragmentType
 import com.example.emotionawareai.domain.model.ResponseStyle
@@ -122,12 +123,7 @@ class ConversationManager @Inject constructor(
         }
 
         if (type != null && content.length >= MIN_FRAGMENT_LENGTH) {
-            val keywords = content.lowercase()
-                .replace(Regex("[^a-z0-9\\s]"), " ")
-                .split(Regex("\\s+"))
-                .filter { it.length > 3 }
-                .distinct()
-                .take(10)
+            val keywords = KeywordExtractor.extract(content, minLength = 3, maxTerms = 10)
 
             val fragment = MemoryFragment(
                 conversationId = convId,
