@@ -14,6 +14,7 @@ android {
     val keystorePassword = System.getenv("KEYSTORE_PASSWORD")
     val keystoreKeyAlias = System.getenv("KEY_ALIAS")
     val keystoreKeyPassword = System.getenv("KEY_PASSWORD")
+    val keystoreType = System.getenv("KEYSTORE_TYPE")
     val hasReleaseSigning = keystoreFile != null && keystorePassword != null &&
         keystoreKeyAlias != null && keystoreKeyPassword != null
 
@@ -50,6 +51,9 @@ android {
                 storePassword = keystorePassword
                 keyAlias = keystoreKeyAlias
                 keyPassword = keystoreKeyPassword
+                // Allow CI to specify the keystore format explicitly (e.g. "JKS" after
+                // converting a modern PKCS12 keystore to a BouncyCastle-compatible format).
+                if (keystoreType != null) storeType = keystoreType
             }
         }
     }
