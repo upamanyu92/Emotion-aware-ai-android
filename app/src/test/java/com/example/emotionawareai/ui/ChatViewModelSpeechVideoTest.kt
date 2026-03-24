@@ -31,6 +31,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -89,7 +91,12 @@ class ChatViewModelSpeechVideoTest {
         coEvery { memoryManager.getUserName() } returns "Test User"
         coEvery { memoryManager.getUserAvatar() } returns "😊"
         coEvery { memoryManager.hasUserProfile() } returns true
+        coEvery { memoryManager.isCameraEnabled() } returns true
+        coEvery { memoryManager.isCameraPreviewVisible() } returns true
+        coEvery { memoryManager.isCaptionsEnabled() } returns true
         coEvery { responseEngine.loadModel() } returns true
+        every { responseEngine.isModelFileAvailable() } returns false
+        every { responseEngine.modelFilePath() } returns "/data/user/0/com.example.emotionawareai/files/models/model.gguf"
 
         coEvery { conversationManager.buildContext(any(), any(), any(), any()) } returns mockk(relaxed = true)
         every { responseEngine.generateResponse(any()) } returns flowOf("ok")
@@ -213,6 +220,48 @@ class ChatViewModelSpeechVideoTest {
         advanceUntilIdle()
         verify(atLeast = 2) { voiceProcessor.startContinuousListening(any()) }
         coVerify { memoryManager.setContinuousConversationEnabled(true) }
+    }
+
+    @Test
+    fun `initial currentEmotion is UNKNOWN so audio-tone can override it`() = runTest {
+        advanceUntilIdle()
+
+        // Before any camera frame is processed, currentEmotion must be UNKNOWN
+        // (not NEUTRAL) so that audio-tone emotion can take over in effectiveEmotion.
+        assertEquals(com.example.emotionawareai.domain.model.Emotion.UNKNOWN, viewModel.currentEmotion.value)
+    }
+
+    @Test
+    fun `sendMessage calls buildContext before saveMessage to avoid duplicate history`() = runTest {
+        advanceUntilIdle()
+
+        val callOrder = mutableListOf<String>()
+        coEvery { conversationManager.buildContext(any(), any(), any(), any()) } answers {
+            callOrder += "buildContext"
+            mockk(relaxed = true)
+        }
+        coEvery { conversationManager.saveMessage(any()) } answers {
+            callOrder += "saveMessage"
+            1L
+        }
+
+        viewModel.sendMessage("test message")
+        advanceUntilIdle()
+
+        val buildIdx = callOrder.indexOf("buildContext")
+        val saveIdx  = callOrder.indexOf("saveMessage")
+        assertTrue(
+            "buildContext (index $buildIdx) must be called before saveMessage (index $saveIdx)",
+            buildIdx >= 0 && saveIdx > buildIdx
+        )
+    }
+
+    @Test
+    fun `isModelAvailable reflects ResponseEngine model file check`() = runTest {
+        advanceUntilIdle()
+
+        // The mock returns false for isModelFileAvailable()
+        assertFalse(viewModel.isModelAvailable.value)
     }
 }
 

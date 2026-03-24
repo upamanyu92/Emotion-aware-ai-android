@@ -165,6 +165,7 @@ dependencies {
 
     // Billing
     implementation(libs.play.billing)
+    implementation(libs.play.services.auth)
 
     // Testing
     testImplementation(libs.junit)
