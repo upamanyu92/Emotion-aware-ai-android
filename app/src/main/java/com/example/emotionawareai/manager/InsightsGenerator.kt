@@ -101,7 +101,8 @@ class InsightsGenerator @Inject constructor(
             "mindfulness" to listOf("mindful", "present", "breath", "meditation", "calm", "overwhelmed"),
             "grief" to listOf("grief", "loss", "miss", "heartbreak", "mourn")
         )
-        val lowerText = messages.joinToString(" ").lowercase()
+        // Limit input to avoid excessive memory use with large histories
+        val lowerText = messages.takeLast(30).joinToString(" ") { it.take(200) }.lowercase()
         return themeKeywords
             .mapValues { (_, kws) -> kws.count { kw -> lowerText.contains(kw) } }
             .filter { it.value > 0 }
@@ -147,16 +148,13 @@ class InsightsGenerator @Inject constructor(
         return steps
     }
 
-    private fun encodeList(items: List<String>): String {
-        if (items.isEmpty()) return "[]"
-        return items.joinToString(",", "[", "]") { "\"${it.replace("\"", "'")}\"" }
-    }
+    private fun encodeList(items: List<String>): String =
+        items.joinToString("|") { it.replace("|", "-") }
 
     private fun WeeklyInsightEntity.toDomain(): WeeklyInsight {
-        fun decodeList(json: String): List<String> =
-            json.removeSurrounding("[", "]").split(",")
-                .map { it.trim().removeSurrounding("\"") }
-                .filter { it.isNotBlank() }
+        fun decodeList(encoded: String): List<String> =
+            if (encoded.isBlank()) emptyList()
+            else encoded.split("|").map { it.trim() }.filter { it.isNotBlank() }
         return WeeklyInsight(
             id = id,
             weekStartTimestamp = weekStartTimestamp,

@@ -220,7 +220,11 @@ class MemoryManager @Inject constructor(
     private fun SessionGoalEntity.toGoal() = SessionGoal(
         id = id,
         title = title,
-        growthArea = GrowthArea.entries.firstOrNull { it.name == growthArea } ?: GrowthArea.MOTIVATION,
+        growthArea = GrowthArea.entries.firstOrNull { it.name == growthArea }
+            ?: run {
+                Log.w(TAG, "Unknown growthArea value '$growthArea' for goal id=$id; defaulting to MOTIVATION")
+                GrowthArea.MOTIVATION
+            },
         progressNote = progressNote,
         isActive = isActive,
         createdAt = createdAt,

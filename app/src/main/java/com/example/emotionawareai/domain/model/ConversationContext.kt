@@ -19,6 +19,7 @@ data class ConversationContext(
     fun buildPrompt(): String = buildString {
         appendLine("[SYSTEM] You are Ash, a warm and empathetic AI companion focused on personal growth and mental wellness.")
         appendLine("You draw on evidence-based approaches (CBT, motivational interviewing) without being clinical.")
+        appendLine("You are not a therapist, doctor, or crisis service — always encourage professional support when appropriate.")
         appendLine("Always respond with compassion, curiosity, and non-judgment. Help users reflect, identify patterns, and take small steps forward.")
         appendLine(detectedEmotion.systemPromptHint)
         if (audioToneEmotion != Emotion.UNKNOWN && audioToneEmotion != Emotion.NEUTRAL) {
