@@ -26,6 +26,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,6 +54,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Hearing
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Videocam
@@ -65,6 +68,8 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -100,15 +105,19 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.emotionawareai.ui.ChatViewModel
 import com.example.emotionawareai.ui.component.ActivityCaptionOverlay
+import com.example.emotionawareai.ui.component.DailyCheckInSheet
 import com.example.emotionawareai.ui.component.EmotionIndicator
 import com.example.emotionawareai.ui.component.MessageBubble
+import com.example.emotionawareai.ui.component.PrivacyNoticeDialog
 import com.example.emotionawareai.ui.component.TelemetryDashboard
 import com.example.emotionawareai.ui.component.VoiceInputButton
+import com.example.emotionawareai.ui.component.VoiceModeOverlay
 import com.example.emotionawareai.ui.theme.GlassBorder
 import com.example.emotionawareai.ui.theme.GlassCard
 import com.example.emotionawareai.ui.theme.GradEnd
@@ -123,7 +132,7 @@ import java.util.concurrent.Executors
 /** Number of most-recent messages to display in the conversation view. */
 private const val VISIBLE_MESSAGE_COUNT = 4
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ChatScreen(viewModel: ChatViewModel) {
     val messages by viewModel.messages.collectAsStateWithLifecycle()
@@ -150,6 +159,9 @@ fun ChatScreen(viewModel: ChatViewModel) {
     val premiumFeaturesEnabled by viewModel.premiumFeaturesGloballyEnabled.collectAsStateWithLifecycle()
     val userName by viewModel.userName.collectAsStateWithLifecycle()
     val userAvatar by viewModel.userAvatar.collectAsStateWithLifecycle()
+    val isVoiceModeActive by viewModel.isVoiceModeActive.collectAsStateWithLifecycle()
+    val showDailyCheckIn by viewModel.showDailyCheckIn.collectAsStateWithLifecycle()
+    val showPrivacyNotice by viewModel.showPrivacyNotice.collectAsStateWithLifecycle()
 
     // Only the last VISIBLE_MESSAGE_COUNT messages are shown; older ones are in DB.
     val displayMessages = remember(messages) { messages.takeLast(VISIBLE_MESSAGE_COUNT) }
@@ -264,6 +276,16 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 actions = {
                     IconButton(onClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        viewModel.toggleVoiceMode()
+                    }) {
+                        Icon(
+                            imageVector = Icons.Filled.Hearing,
+                            contentDescription = if (isVoiceModeActive) "Exit voice mode" else "Enter voice mode",
+                            tint = if (isVoiceModeActive) NeonCyan else Color.White
+                        )
+                    }
+                    IconButton(onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         viewModel.toggleContinuousConversation()
                     }) {
                         Icon(
@@ -370,7 +392,8 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     isListening = isListening
                 )
 
-                // ── LLM model setup banner ────────────────────────────────────
+                // ── Session greeting header ───────────────────────────────────
+                SessionHeader(userName = userName)
                 AnimatedVisibility(
                     visible = !isModelAvailable,
                     enter = expandVertically() + fadeIn(),
@@ -539,6 +562,10 @@ fun ChatScreen(viewModel: ChatViewModel) {
                                     color = Color.White.copy(alpha = 0.35f)
                                 )
                             }
+                        }
+                        // Show topic suggestion chips when no messages yet
+                        if (displayMessages.isEmpty()) {
+                            TopicChips(onTopicSelected = { inputText = it })
                         }
                     }
                     items(
@@ -782,6 +809,33 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     }
                 }
             }
+
+            // ── Voice mode fullscreen overlay ─────────────────────────────────
+            AnimatedVisibility(
+                visible = isVoiceModeActive,
+                modifier = Modifier.fillMaxSize(),
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                VoiceModeOverlay(
+                    isListening = isListening,
+                    isGenerating = isGenerating,
+                    onExit = { viewModel.toggleVoiceMode() }
+                )
+            }
+
+            // Daily check-in sheet
+            if (showDailyCheckIn) {
+                DailyCheckInSheet(
+                    onSubmit = { score, note -> viewModel.submitMoodCheckIn(score, note) },
+                    onDismiss = { viewModel.dismissDailyCheckIn() }
+                )
+            }
+
+            // Privacy notice dialog
+            if (showPrivacyNotice) {
+                PrivacyNoticeDialog(onDismiss = { viewModel.dismissPrivacyNotice() })
+            }
         }
     }
 }
@@ -872,4 +926,100 @@ private fun CameraPreviewOverlay(
         },
         modifier = modifier
     )
+}
+
+// ── Session greeting header ────────────────────────────────────────────────────
+@Composable
+private fun SessionHeader(userName: String) {
+    val hour = remember { java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) }
+    val greeting = when {
+        hour < 12 -> "Good morning"
+        hour < 17 -> "Good afternoon"
+        else -> "Good evening"
+    }
+    val affirmations = listOf(
+        "You're doing great 💪",
+        "Small steps add up 🌱",
+        "Be kind to yourself 🤍",
+        "Today is a fresh start ✨",
+        "You've got this 🌟",
+        "Progress over perfection 🎯",
+        "Breathe and take it one step at a time 🧘"
+    )
+    val dayOfWeek = remember { java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_WEEK) }
+    val affirmation = affirmations[(dayOfWeek - 1) % affirmations.size]
+    val dateStr = remember {
+        java.text.SimpleDateFormat("EEEE, MMM d", java.util.Locale.getDefault())
+            .format(java.util.Date())
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+    ) {
+        Text(
+            text = if (userName.isNotBlank()) "$greeting, $userName" else greeting,
+            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+            color = Color.White
+        )
+        Text(
+            text = dateStr,
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White.copy(alpha = 0.5f)
+        )
+        Text(
+            text = affirmation,
+            style = MaterialTheme.typography.bodySmall,
+            color = NeonCyan.copy(alpha = 0.8f)
+        )
+    }
+}
+
+// ── Topic suggestion chips ─────────────────────────────────────────────────────
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TopicChips(onTopicSelected: (String) -> Unit) {
+    val topics = listOf(
+        "Feeling anxious", "Work stress", "Relationship advice",
+        "Boost my motivation", "I can't sleep", "Build confidence"
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 8.dp)
+    ) {
+        Text(
+            "What's on your mind?",
+            style = MaterialTheme.typography.labelMedium,
+            color = Color.White.copy(alpha = 0.5f),
+            modifier = Modifier.padding(bottom = 8.dp, start = 8.dp)
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 4.dp)
+        ) {
+            topics.forEach { topic ->
+                FilterChip(
+                    selected = false,
+                    onClick = { onTopicSelected(topic) },
+                    label = {
+                        Text(
+                            topic,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.8f)
+                        )
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        containerColor = GlassCard
+                    ),
+                    border = FilterChipDefaults.filterChipBorder(
+                        enabled = true,
+                        selected = false,
+                        borderColor = NeonPurple.copy(alpha = 0.35f)
+                    )
+                )
+            }
+        }
+    }
 }

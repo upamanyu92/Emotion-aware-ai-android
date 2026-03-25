@@ -27,6 +27,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
@@ -40,6 +42,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -54,6 +58,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
@@ -70,6 +76,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.emotionawareai.domain.model.GrowthArea
 import com.example.emotionawareai.ui.theme.GlassBorder
 import com.example.emotionawareai.ui.theme.GlassCard
 import com.example.emotionawareai.ui.theme.GradEnd
@@ -97,15 +104,22 @@ private val AVATAR_OPTIONS = listOf("😊", "😎", "🧘", "🎯", "💡", "�
  *                         caller is responsible for launching the Custom-Tabs
  *                         flow and calling [onProfileCreated] on success.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun LoginScreen(
     onProfileCreated: (name: String, avatar: String) -> Unit,
+    onOnboardingComplete: (areas: List<GrowthArea>, frequency: String) -> Unit = { _, _ -> },
     onAppleSignIn: () -> Unit = {}
 ) {
     var name by remember { mutableStateOf("") }
     var selectedAvatar by remember { mutableStateOf(AVATAR_OPTIONS.first()) }
     var showContent by remember { mutableStateOf(false) }
     var showLocalForm by remember { mutableStateOf(false) }
+    var onboardingStep by remember { mutableStateOf(0) }
+    var selectedAreas by remember { mutableStateOf(setOf<GrowthArea>()) }
+    var selectedFrequency by remember { mutableStateOf("daily") }
+    var pendingName by remember { mutableStateOf("") }
+    var pendingAvatar by remember { mutableStateOf(AVATAR_OPTIONS.first()) }
     val keyboard = LocalSoftwareKeyboardController.current
     val haptics = LocalHapticFeedback.current
     val context = LocalContext.current
@@ -121,7 +135,9 @@ fun LoginScreen(
                 val displayName = account?.displayName?.ifBlank { null }
                     ?: account?.email?.substringBefore('@')
                     ?: "User"
-                onProfileCreated(displayName, "😊")
+                pendingName = displayName
+                pendingAvatar = "😊"
+                onboardingStep = 1
             } catch (_: ApiException) {
                 // Sign-in failed — fall through to local form
                 showLocalForm = true
@@ -211,7 +227,8 @@ fun LoginScreen(
                     .statusBarsPadding()
                     .navigationBarsPadding()
                     .imePadding()
-                    .padding(horizontal = 28.dp),
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 28.dp, vertical = 32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
@@ -235,6 +252,8 @@ fun LoginScreen(
 
                 Spacer(Modifier.height(36.dp))
 
+                when (onboardingStep) {
+                    0 -> {
                 if (!showLocalForm) {
                     // ── Social sign-in buttons ───────────────────────────────
                     // Google Sign-In
@@ -439,7 +458,9 @@ fun LoginScreen(
                                 keyboard?.hide()
                                 val trimmedName = name.trim()
                                 if (trimmedName.isNotBlank()) {
-                                    onProfileCreated(trimmedName, selectedAvatar)
+                                    pendingName = trimmedName
+                                    pendingAvatar = selectedAvatar
+                                    onboardingStep = 1
                                 }
                             }
                         ),
@@ -462,7 +483,9 @@ fun LoginScreen(
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             val trimmedName = name.trim()
                             if (trimmedName.isNotBlank()) {
-                                onProfileCreated(trimmedName, selectedAvatar)
+                                pendingName = trimmedName
+                                pendingAvatar = selectedAvatar
+                                onboardingStep = 1
                             }
                         },
                         enabled = name.trim().isNotBlank(),
@@ -513,7 +536,183 @@ fun LoginScreen(
                         color = NeonCyan.copy(alpha = 0.6f),
                         modifier = Modifier.clickable { showLocalForm = false }
                     )
-                }
+                } // end if-else (step 0)
+                    } // end case 0
+
+                    1 -> {
+                        // ── Step 1: Growth area selection ────────────────────
+                        Text(
+                            text = "What do you want to work on?",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = Color.White,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "Pick the areas most relevant to you",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White.copy(alpha = 0.6f),
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(Modifier.height(20.dp))
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            GrowthArea.entries.forEach { area ->
+                                val isSelected = area in selectedAreas
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        selectedAreas = if (isSelected) {
+                                            selectedAreas - area
+                                        } else {
+                                            selectedAreas + area
+                                        }
+                                    },
+                                    label = {
+                                        Text(
+                                            "${area.emoji} ${area.displayName}",
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        containerColor = Color.Transparent,
+                                        selectedContainerColor = NeonPurple.copy(alpha = 0.35f),
+                                        labelColor = Color.White,
+                                        selectedLabelColor = Color.White
+                                    ),
+                                    border = FilterChipDefaults.filterChipBorder(
+                                        enabled = true,
+                                        selected = isSelected,
+                                        borderColor = GlassBorder,
+                                        selectedBorderColor = NeonCyan
+                                    )
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(28.dp))
+                        Button(
+                            onClick = { onboardingStep = 2 },
+                            enabled = selectedAreas.isNotEmpty(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = NeonPurple,
+                                disabledContainerColor = NeonPurple.copy(alpha = 0.3f)
+                            )
+                        ) {
+                            Text(
+                                "Continue →",
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                color = Color.White
+                            )
+                        }
+                    } // end case 1
+
+                    2 -> {
+                        // ── Step 2: Check-in frequency + privacy ─────────────
+                        Text(
+                            text = "How often would you like to check in?",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = Color.White,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(Modifier.height(20.dp))
+                        listOf(
+                            Triple("daily", "Daily", "A check-in every day"),
+                            Triple("weekly", "Weekly", "Once a week review"),
+                            Triple("as_needed", "As needed", "Whenever you feel like it")
+                        ).forEach { (value, label, subtitle) ->
+                            val isSelected = selectedFrequency == value
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(
+                                        if (isSelected) NeonPurple.copy(alpha = 0.25f) else GlassCard
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (isSelected) NeonCyan.copy(alpha = 0.7f) else GlassBorder,
+                                        RoundedCornerShape(14.dp)
+                                    )
+                                    .clickable { selectedFrequency = value }
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        label,
+                                        style = MaterialTheme.typography.bodyLarge.copy(
+                                            fontWeight = FontWeight.SemiBold
+                                        ),
+                                        color = Color.White
+                                    )
+                                    Text(
+                                        subtitle,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color.White.copy(alpha = 0.55f)
+                                    )
+                                }
+                                if (isSelected) {
+                                    Text(
+                                        "✓",
+                                        color = NeonCyan,
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(16.dp))
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(GlassCard)
+                                .border(1.dp, GlassBorder, RoundedCornerShape(12.dp))
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                "🔒 Your data stays on your device. Nothing is sent to external servers.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.8f)
+                            )
+                            Text(
+                                "ℹ️ Ash is for personal growth, not medical care. If you're in crisis, call 988.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.7f)
+                            )
+                        }
+                        Spacer(Modifier.height(24.dp))
+                        Button(
+                            onClick = {
+                                onOnboardingComplete(selectedAreas.toList(), selectedFrequency)
+                                onProfileCreated(pendingName, pendingAvatar)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonPurple)
+                        ) {
+                            Text(
+                                "Get Started ✨",
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                color = Color.White
+                            )
+                        }
+                    } // end case 2
+                } // end when
             }
         }
     }

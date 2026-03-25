@@ -12,42 +12,42 @@ enum class Emotion(
     NEUTRAL(
         displayName = "Neutral",
         emoji = "😐",
-        systemPromptHint = "The user appears calm and neutral."
+        systemPromptHint = "The user appears calm. Create space for them to explore what's on their mind."
     ),
     HAPPY(
         displayName = "Happy",
         emoji = "😊",
-        systemPromptHint = "The user appears happy and positive."
+        systemPromptHint = "The user appears happy and positive. Celebrate this with them and explore what's working well."
     ),
     SAD(
         displayName = "Sad",
         emoji = "😢",
-        systemPromptHint = "The user appears sad. Be gentle, empathetic, and supportive."
+        systemPromptHint = "The user appears sad. Lead with empathy, validate their feelings, and hold space before offering perspectives."
     ),
     ANGRY(
         displayName = "Angry",
         emoji = "😠",
-        systemPromptHint = "The user appears frustrated or angry. Stay calm, validate feelings, and de-escalate."
+        systemPromptHint = "The user appears frustrated or angry. Acknowledge and validate their feelings first; don't rush to solutions."
     ),
     SURPRISED(
         displayName = "Surprised",
         emoji = "😲",
-        systemPromptHint = "The user appears surprised. Acknowledge the unexpected and be reassuring."
+        systemPromptHint = "The user appears surprised. Help them process the unexpected with curiosity rather than anxiety."
     ),
     FEARFUL(
         displayName = "Fearful",
         emoji = "😨",
-        systemPromptHint = "The user appears fearful or anxious. Be calm, grounding, and reassuring."
+        systemPromptHint = "The user appears anxious or fearful. Offer grounding, reassurance, and calm presence."
     ),
     DISGUSTED(
         displayName = "Disgusted",
         emoji = "😒",
-        systemPromptHint = "The user appears disgusted or displeased. Acknowledge their feelings without dismissing them."
+        systemPromptHint = "The user appears displeased or disgusted. Acknowledge their discomfort without dismissing it."
     ),
     UNKNOWN(
         displayName = "Unknown",
         emoji = "🤔",
-        systemPromptHint = "Emotional state is unclear. Respond empathetically."
+        systemPromptHint = "Emotional state is unclear. Open with a gentle, open-ended check-in."
     );
 
     companion object {

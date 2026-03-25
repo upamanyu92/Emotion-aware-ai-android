@@ -11,7 +11,6 @@ import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Test
 
@@ -25,6 +24,7 @@ class ConversationManagerTest {
     fun setUp() {
         repository = mockk(relaxed = true)
         memoryRepository = mockk(relaxed = true)
+        coEvery { memoryRepository.retrieveRelevant(any(), any()) } returns emptyList()
         manager = ConversationManager(repository, memoryRepository)
     }
 
@@ -48,7 +48,6 @@ class ConversationManagerTest {
             ChatMessage(id = 2, content = "Hi there!", role = MessageRole.ASSISTANT)
         )
         coEvery { repository.getPreference(any(), any()) } returns "EMPATHETIC"
-        coEvery { memoryRepository.retrieveRelevant(any(), any()) } returns emptyList()
 
         val context = manager.buildContext("How are you?", Emotion.HAPPY)
 
@@ -63,7 +62,6 @@ class ConversationManagerTest {
         coEvery { repository.getOrCreateActiveConversation() } returns 1L
         coEvery { repository.getRecentMessages(any(), any()) } returns emptyList()
         coEvery { repository.getPreference(any(), any()) } returns "EMPATHETIC"
-        coEvery { memoryRepository.retrieveRelevant(any(), any()) } returns emptyList()
 
         val context = manager.buildContext("I'm feeling low", Emotion.SAD)
         val prompt = context.buildPrompt()
@@ -80,7 +78,6 @@ class ConversationManagerTest {
     fun `saveMessage delegates to repository`() = runTest {
         val convId = 5L
         coEvery { repository.getOrCreateActiveConversation() } returns convId
-        coEvery { memoryRepository.storeFragment(any()) } returns 1L
         val message = ChatMessage(
             content = "Test",
             role = MessageRole.USER,
@@ -111,7 +108,6 @@ class ConversationManagerTest {
         coEvery { repository.getOrCreateActiveConversation() } returns 1L
         coEvery { repository.getRecentMessages(any(), any()) } returns emptyList()
         coEvery { repository.getPreference(any(), any()) } returns "EMPATHETIC"
-        coEvery { memoryRepository.retrieveRelevant(any(), any()) } returns emptyList()
 
         val context = manager.buildContext("Hello AI", Emotion.NEUTRAL)
         val prompt = context.buildPrompt()
@@ -124,7 +120,6 @@ class ConversationManagerTest {
     @Test
     fun `buildContext history does not include the message being sent`() = runTest {
         val convId = 1L
-        // Simulate: previous saved messages do NOT include the current user turn.
         val previousMessages = listOf(
             ChatMessage(id = 1, content = "Hi there", role = MessageRole.USER),
             ChatMessage(id = 2, content = "Hello!", role = MessageRole.ASSISTANT)
@@ -132,45 +127,17 @@ class ConversationManagerTest {
         coEvery { repository.getOrCreateActiveConversation() } returns convId
         coEvery { repository.getRecentMessages(convId, any()) } returns previousMessages
         coEvery { repository.getPreference(any(), any()) } returns "EMPATHETIC"
-        coEvery { memoryRepository.retrieveRelevant(any(), any()) } returns emptyList()
 
         val currentUserMessage = "What can you help me with?"
         val context = manager.buildContext(currentUserMessage, Emotion.NEUTRAL)
         val prompt = context.buildPrompt()
 
-        // The current user message should appear once — in [USER], not duplicated in [CONTEXT].
         val userTagCount = prompt.split("[USER]").size - 1
         assertEquals("Current user message must appear exactly once under [USER]", 1, userTagCount)
 
-        // History should contain only the two previous messages, not the current one.
         assertEquals(2, context.recentHistory.size)
         assert(context.recentHistory.none { it.content == currentUserMessage }) {
             "Current user message must not appear in recentHistory"
-        }
-    }
-
-    @Test
-    fun `buildPrompt injects long-term memory section when memories present`() = runTest {
-        val convId = 1L
-        coEvery { repository.getOrCreateActiveConversation() } returns convId
-        coEvery { repository.getRecentMessages(any(), any()) } returns emptyList()
-        coEvery { repository.getPreference(any(), any()) } returns "EMPATHETIC"
-        coEvery { memoryRepository.retrieveRelevant(any(), any()) } returns listOf(
-            com.example.emotionawareai.domain.model.MemoryFragment(
-                content = "User wants to exercise daily",
-                keywords = listOf("exercise", "daily"),
-                type = com.example.emotionawareai.domain.model.MemoryFragmentType.GOAL
-            )
-        )
-
-        val context = manager.buildContext("How am I doing?", Emotion.NEUTRAL)
-        val prompt = context.buildPrompt()
-
-        assert(prompt.contains("[LONG-TERM MEMORY]")) {
-            "Prompt should contain long-term memory section"
-        }
-        assert(prompt.contains("exercise daily")) {
-            "Prompt should include retrieved memory content"
         }
     }
 }

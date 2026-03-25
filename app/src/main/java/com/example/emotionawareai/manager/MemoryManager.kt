@@ -1,13 +1,18 @@
 package com.example.emotionawareai.manager
 
 import android.util.Log
+import com.example.emotionawareai.data.database.SessionGoalDao
+import com.example.emotionawareai.data.model.SessionGoalEntity
 import com.example.emotionawareai.data.model.UserPreferenceEntity
 import com.example.emotionawareai.domain.model.ChatMessage
 import com.example.emotionawareai.domain.model.Emotion
+import com.example.emotionawareai.domain.model.GrowthArea
+import com.example.emotionawareai.domain.model.SessionGoal
 import com.example.emotionawareai.domain.repository.ConversationRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -21,7 +26,8 @@ import javax.inject.Singleton
  */
 @Singleton
 class MemoryManager @Inject constructor(
-    private val repository: ConversationRepository
+    private val repository: ConversationRepository,
+    private val sessionGoalDao: SessionGoalDao
 ) {
     /**
      * Retrieves the [limit] most recent [ChatMessage]s for [conversationId],
@@ -182,6 +188,89 @@ class MemoryManager @Inject constructor(
             .eachCount()
             .maxByOrNull { it.value }
             ?.key ?: Emotion.NEUTRAL
+    }
+
+    // ── Growth goals helpers ──────────────────────────────────────────────────
+
+    fun observeActiveGoals(): Flow<List<SessionGoal>> =
+        sessionGoalDao.observeActiveGoals()
+            .map { list -> list.map { it.toGoal() } }
+            .flowOn(Dispatchers.IO)
+
+    suspend fun getActiveGoals(): List<SessionGoal> = withContext(Dispatchers.IO) {
+        sessionGoalDao.getActiveGoals().map { it.toGoal() }
+    }
+
+    suspend fun addGoal(title: String, area: GrowthArea): Long = withContext(Dispatchers.IO) {
+        sessionGoalDao.insert(SessionGoalEntity(title = title, growthArea = area.name))
+    }
+
+    suspend fun archiveGoal(id: Long) = withContext(Dispatchers.IO) {
+        sessionGoalDao.archiveGoal(id)
+    }
+
+    suspend fun updateGoalProgress(id: Long, note: String) = withContext(Dispatchers.IO) {
+        sessionGoalDao.updateProgress(id, note)
+    }
+
+    suspend fun deleteGoal(id: Long) = withContext(Dispatchers.IO) {
+        sessionGoalDao.delete(id)
+    }
+
+    private fun SessionGoalEntity.toGoal() = SessionGoal(
+        id = id,
+        title = title,
+        growthArea = GrowthArea.entries.firstOrNull { it.name == growthArea }
+            ?: run {
+                Log.w(TAG, "Unknown growthArea value '$growthArea' for goal id=$id; defaulting to MOTIVATION")
+                GrowthArea.MOTIVATION
+            },
+        progressNote = progressNote,
+        isActive = isActive,
+        createdAt = createdAt,
+        lastMentionedAt = lastMentionedAt
+    )
+
+    // ── Onboarding/preference helpers ─────────────────────────────────────────
+
+    suspend fun getGrowthAreas(): List<GrowthArea> {
+        val raw = getPreference(UserPreferenceEntity.KEY_GROWTH_AREAS, "")
+        if (raw.isBlank()) return emptyList()
+        return raw.split(",").mapNotNull { name ->
+            GrowthArea.entries.firstOrNull { it.name == name.trim() }
+        }
+    }
+
+    suspend fun setGrowthAreas(areas: List<GrowthArea>) {
+        savePreference(UserPreferenceEntity.KEY_GROWTH_AREAS, areas.joinToString(",") { it.name })
+    }
+
+    suspend fun getCheckInFrequency(): String =
+        getPreference(UserPreferenceEntity.KEY_CHECKIN_FREQUENCY, "daily")
+
+    suspend fun setCheckInFrequency(frequency: String) {
+        savePreference(UserPreferenceEntity.KEY_CHECKIN_FREQUENCY, frequency)
+    }
+
+    suspend fun isPrivacyNoticeShown(): Boolean =
+        getPreference(UserPreferenceEntity.KEY_PRIVACY_NOTICE_SHOWN, "false").toBoolean()
+
+    suspend fun setPrivacyNoticeShown() {
+        savePreference(UserPreferenceEntity.KEY_PRIVACY_NOTICE_SHOWN, "true")
+    }
+
+    suspend fun isOnboardingComplete(): Boolean =
+        getPreference(UserPreferenceEntity.KEY_ONBOARDING_COMPLETE, "false").toBoolean()
+
+    suspend fun setOnboardingComplete() {
+        savePreference(UserPreferenceEntity.KEY_ONBOARDING_COMPLETE, "true")
+    }
+
+    suspend fun getLastCheckInDate(): String =
+        getPreference(UserPreferenceEntity.KEY_LAST_CHECKIN_DATE, "")
+
+    suspend fun setLastCheckInDate(isoDate: String) {
+        savePreference(UserPreferenceEntity.KEY_LAST_CHECKIN_DATE, isoDate)
     }
 
     companion object {

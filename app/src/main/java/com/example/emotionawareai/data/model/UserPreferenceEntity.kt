@@ -31,5 +31,15 @@ data class UserPreferenceEntity(
         const val KEY_CAPTIONS_ENABLED = "captions_enabled"
         /** Whether the camera preview feed is shown to the user (camera may still be running). */
         const val KEY_CAMERA_PREVIEW_VISIBLE = "camera_preview_visible"
+        /** Selected growth areas from onboarding (comma-separated GrowthArea names). */
+        const val KEY_GROWTH_AREAS = "growth_areas"
+        /** Check-in frequency preference: "daily", "weekly", or "as_needed". */
+        const val KEY_CHECKIN_FREQUENCY = "checkin_frequency"
+        /** Whether the privacy notice has been shown on first launch. */
+        const val KEY_PRIVACY_NOTICE_SHOWN = "privacy_notice_shown"
+        /** Whether the onboarding flow has been fully completed (including goal selection). */
+        const val KEY_ONBOARDING_COMPLETE = "onboarding_complete"
+        /** Whether the daily check-in sheet has been shown today (ISO date string). */
+        const val KEY_LAST_CHECKIN_DATE = "last_checkin_date"
     }
 }

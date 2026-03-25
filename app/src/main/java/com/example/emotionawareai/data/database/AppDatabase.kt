@@ -7,6 +7,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.emotionawareai.data.model.ConversationEntity
 import com.example.emotionawareai.data.model.MemoryFragmentEntity
 import com.example.emotionawareai.data.model.MessageEntity
+import com.example.emotionawareai.data.model.MoodCheckInEntity
+import com.example.emotionawareai.data.model.SessionGoalEntity
 import com.example.emotionawareai.data.model.UserPreferenceEntity
 import com.example.emotionawareai.data.model.WeeklyInsightEntity
 
@@ -16,9 +18,11 @@ import com.example.emotionawareai.data.model.WeeklyInsightEntity
         MessageEntity::class,
         UserPreferenceEntity::class,
         MemoryFragmentEntity::class,
-        WeeklyInsightEntity::class
+        WeeklyInsightEntity::class,
+        MoodCheckInEntity::class,
+        SessionGoalEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -26,6 +30,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun userPreferenceDao(): UserPreferenceDao
     abstract fun memoryFragmentDao(): MemoryFragmentDao
     abstract fun weeklyInsightDao(): WeeklyInsightDao
+    abstract fun moodCheckInDao(): MoodCheckInDao
+    abstract fun sessionGoalDao(): SessionGoalDao
 
     companion object {
         const val DATABASE_NAME = "emotion_aware_ai.db"
@@ -59,6 +65,38 @@ abstract class AppDatabase : RoomDatabase() {
                         `summary` TEXT NOT NULL,
                         `trackedGoals` TEXT NOT NULL DEFAULT '[]',
                         `createdAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        /**
+         * Adds [MoodCheckInEntity] and [SessionGoalEntity] tables introduced in v3.
+         */
+        val MIGRATION_2_3: Migration = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `mood_checkins` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `moodScore` INTEGER NOT NULL,
+                        `note` TEXT NOT NULL DEFAULT '',
+                        `emotion` TEXT NOT NULL DEFAULT 'NEUTRAL',
+                        `timestamp` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `session_goals` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `growthArea` TEXT NOT NULL,
+                        `progressNote` TEXT NOT NULL DEFAULT '',
+                        `isActive` INTEGER NOT NULL DEFAULT 1,
+                        `createdAt` INTEGER NOT NULL,
+                        `lastMentionedAt` INTEGER NOT NULL
                     )
                     """.trimIndent()
                 )
