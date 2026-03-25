@@ -4,30 +4,28 @@ import com.example.emotionawareai.domain.model.ChatMessage
 import com.example.emotionawareai.domain.model.Emotion
 import com.example.emotionawareai.domain.model.MessageRole
 import com.example.emotionawareai.domain.repository.ConversationRepository
+import com.example.emotionawareai.domain.repository.IMemoryRepository
 import com.example.emotionawareai.manager.ConversationManager
-import com.example.emotionawareai.manager.MemoryManager
-import com.example.emotionawareai.domain.model.SessionGoal
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Test
 
 class ConversationManagerTest {
 
     private lateinit var repository: ConversationRepository
-    private lateinit var memoryManager: MemoryManager
+    private lateinit var memoryRepository: IMemoryRepository
     private lateinit var manager: ConversationManager
 
     @Before
     fun setUp() {
         repository = mockk(relaxed = true)
-        memoryManager = mockk(relaxed = true)
-        coEvery { memoryManager.getActiveGoals() } returns emptyList()
-        manager = ConversationManager(repository, memoryManager)
+        memoryRepository = mockk(relaxed = true)
+        coEvery { memoryRepository.retrieveRelevant(any(), any()) } returns emptyList()
+        manager = ConversationManager(repository, memoryRepository)
     }
 
     @Test
@@ -122,7 +120,6 @@ class ConversationManagerTest {
     @Test
     fun `buildContext history does not include the message being sent`() = runTest {
         val convId = 1L
-        // Simulate: previous saved messages do NOT include the current user turn.
         val previousMessages = listOf(
             ChatMessage(id = 1, content = "Hi there", role = MessageRole.USER),
             ChatMessage(id = 2, content = "Hello!", role = MessageRole.ASSISTANT)
@@ -135,11 +132,9 @@ class ConversationManagerTest {
         val context = manager.buildContext(currentUserMessage, Emotion.NEUTRAL)
         val prompt = context.buildPrompt()
 
-        // The current user message should appear once — in [USER], not duplicated in [CONTEXT].
         val userTagCount = prompt.split("[USER]").size - 1
         assertEquals("Current user message must appear exactly once under [USER]", 1, userTagCount)
 
-        // History should contain only the two previous messages, not the current one.
         assertEquals(2, context.recentHistory.size)
         assert(context.recentHistory.none { it.content == currentUserMessage }) {
             "Current user message must not appear in recentHistory"

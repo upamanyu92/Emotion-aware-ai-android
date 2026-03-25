@@ -8,6 +8,7 @@ import com.example.emotionawareai.data.model.SessionGoalEntity
 import com.example.emotionawareai.data.model.WeeklyInsightEntity
 import com.example.emotionawareai.domain.model.Emotion
 import com.example.emotionawareai.domain.model.GrowthArea
+import com.example.emotionawareai.domain.model.KeywordExtractor
 import com.example.emotionawareai.domain.model.SessionGoal
 import com.example.emotionawareai.domain.model.WeeklyInsight
 import com.example.emotionawareai.domain.repository.ConversationRepository
@@ -16,12 +17,13 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import java.util.Calendar
-import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
  * Generates weekly insight reports from mood check-ins, conversation history, and goal data.
+ *
+ * Uses [KeywordExtractor] (shared with the RAG layer) for consistent theme extraction.
  */
 @Singleton
 class InsightsGenerator @Inject constructor(
@@ -32,46 +34,48 @@ class InsightsGenerator @Inject constructor(
 ) {
     companion object {
         private const val TAG = "InsightsGenerator"
-        private val WEEK_MS = TimeUnit.DAYS.toMillis(7)
     }
 
     fun observeInsights(): Flow<List<WeeklyInsight>> =
         weeklyInsightDao.observeAll().map { list -> list.map { it.toDomain() } }
 
     suspend fun getLatestInsight(): WeeklyInsight? = withContext(Dispatchers.IO) {
-        weeklyInsightDao.getLatest()?.toDomain()
+        weeklyInsightDao.getRecent(1).firstOrNull()?.toDomain()
     }
 
+    /**
+     * Generates (or regenerates) the insight for the current week and persists it.
+     * Safe to call multiple times — overwrites any existing entry for the same week.
+     */
     suspend fun generateCurrentWeekInsight(activeConversationId: Long): WeeklyInsight =
         withContext(Dispatchers.IO) {
             val weekStart = currentWeekStart()
             val recentMessages = repository.getRecentMessages(activeConversationId, limit = 50)
             val activeGoals = sessionGoalDao.getActiveGoals()
 
-            val avgMood = moodCheckInDao.averageMoodSince(weekStart) ?: 3.0f
-            val checkInCount = moodCheckInDao.countSince(weekStart)
             val dominantEmotion = inferDominantEmotion(
-                recentMessages.filter { it.isFromUser }
-                    .map { it.emotion }
+                recentMessages.filter { it.isFromUser }.map { it.emotion }
                     .filter { it != Emotion.UNKNOWN }
             )
-            val themes = extractThemes(recentMessages.filter { it.isFromUser }.map { it.content })
+            val emotionFrequencies = recentMessages.filter { it.isFromUser }
+                .map { it.emotion }
+                .filter { it != Emotion.UNKNOWN }
+                .groupingBy { it }
+                .eachCount()
+
             val goalTitles = activeGoals.map { it.title }
-            val narrative = buildNarrative(avgMood, checkInCount, dominantEmotion, themes, goalTitles)
-            val nextSteps = buildNextSteps(avgMood, themes, activeGoals)
+            val summary = buildSummary(dominantEmotion, emotionFrequencies, goalTitles)
 
             val entity = WeeklyInsightEntity(
                 weekStartTimestamp = weekStart,
                 dominantEmotion = dominantEmotion.name,
-                moodAverage = avgMood,
-                checkInCount = checkInCount,
-                topThemesJson = encodeList(themes.take(5)),
-                narrative = narrative,
-                suggestedNextStepsJson = encodeList(nextSteps.take(3)),
-                generatedAt = System.currentTimeMillis()
+                emotionFrequencies = encodeFrequencies(emotionFrequencies),
+                summary = summary,
+                trackedGoals = encodeList(goalTitles.take(5)),
+                createdAt = System.currentTimeMillis()
             )
             weeklyInsightDao.insert(entity)
-            Log.i(TAG, "Generated weekly insight: mood=$avgMood, checkIns=$checkInCount, themes=${themes.size}")
+            Log.i(TAG, "Generated weekly insight: dominantEmotion=$dominantEmotion, goals=${goalTitles.size}")
             entity.toDomain()
         }
 
@@ -90,81 +94,54 @@ class InsightsGenerator @Inject constructor(
         return emotions.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key ?: Emotion.NEUTRAL
     }
 
-    private fun extractThemes(messages: List<String>): List<String> {
-        val themeKeywords = mapOf(
-            "work stress" to listOf("work", "job", "boss", "deadline", "office", "colleague", "meeting", "project"),
-            "relationships" to listOf("partner", "friend", "family", "relationship", "love", "argue", "fight", "lonely"),
-            "anxiety" to listOf("anxious", "anxiety", "worry", "worried", "nervous", "panic", "scared"),
-            "motivation" to listOf("motivation", "goal", "productivity", "procrastinate", "focus", "achieve"),
-            "sleep" to listOf("sleep", "tired", "exhausted", "insomnia", "rest", "fatigue"),
-            "self-esteem" to listOf("confident", "confidence", "self-worth", "doubt", "insecure"),
-            "mindfulness" to listOf("mindful", "present", "breath", "meditation", "calm", "overwhelmed"),
-            "grief" to listOf("grief", "loss", "miss", "heartbreak", "mourn")
-        )
-        // Limit input to avoid excessive memory use with large histories
-        val lowerText = messages.takeLast(30).joinToString(" ") { it.take(200) }.lowercase()
-        return themeKeywords
-            .mapValues { (_, kws) -> kws.count { kw -> lowerText.contains(kw) } }
-            .filter { it.value > 0 }
-            .entries.sortedByDescending { it.value }
-            .map { it.key }
-    }
-
-    private fun buildNarrative(
-        avgMood: Float,
-        checkInCount: Int,
-        emotion: Emotion,
-        themes: List<String>,
+    private fun buildSummary(
+        dominant: Emotion,
+        frequencies: Map<Emotion, Int>,
         goals: List<String>
     ): String {
-        val moodDesc = when {
-            avgMood >= 4.0f -> "strong"
-            avgMood >= 3.0f -> "steady"
-            avgMood >= 2.0f -> "challenging"
-            else -> "difficult"
+        val total = frequencies.values.sum().coerceAtLeast(1)
+        val dominantPct = ((frequencies[dominant] ?: 0) * 100 / total)
+        val goalPhrase = if (goals.isNotEmpty()) " You're actively working on: ${goals.first()}." else ""
+        return "This week your dominant mood was ${dominant.displayName} (${dominantPct}% of signals).$goalPhrase Keep reflecting — small steps lead to lasting change."
+    }
+
+    private fun encodeFrequencies(frequencies: Map<Emotion, Int>): String {
+        if (frequencies.isEmpty()) return "{}"
+        return frequencies.entries.joinToString(",", "{", "}") { (e, c) ->
+            "\"${e.name}\":$c"
         }
-        val themePhrase = if (themes.isNotEmpty())
-            "Your conversations touched on ${themes.take(2).joinToString(" and ")}. "
-        else ""
-        val checkInPhrase = if (checkInCount > 0)
-            "You checked in $checkInCount time${if (checkInCount != 1) "s" else ""} this week. "
-        else "You didn't log any check-ins this week — that's okay. "
-        val goalPhrase = if (goals.isNotEmpty()) "You're working on ${goals.first()}. " else ""
-        return "This was a $moodDesc week emotionally. $checkInPhrase$themePhrase${goalPhrase}Keep going — small steps create lasting change."
     }
 
-    private fun buildNextSteps(
-        avgMood: Float,
-        themes: List<String>,
-        goals: List<SessionGoalEntity>
-    ): List<String> {
-        val steps = mutableListOf<String>()
-        if (avgMood < 3.0f) steps.add("Try a 5-minute breathing exercise each morning this week")
-        if ("anxiety" in themes) steps.add("Write down 3 things you can control today")
-        if ("sleep" in themes) steps.add("Set a consistent wind-down routine 30 minutes before bed")
-        if ("relationships" in themes) steps.add("Reach out to one person who supports you")
-        if (goals.isNotEmpty()) steps.add("Spend 10 minutes reflecting on your goal: ${goals.first().title}")
-        if (steps.isEmpty()) steps.add("Continue your daily check-ins to track your progress")
-        return steps
+    private fun encodeList(items: List<String>): String {
+        if (items.isEmpty()) return "[]"
+        return items.joinToString(",", "[", "]") { "\"${it.replace("\"", "'")}\"" }
     }
-
-    private fun encodeList(items: List<String>): String =
-        items.joinToString("|") { it.replace("|", "-") }
 
     private fun WeeklyInsightEntity.toDomain(): WeeklyInsight {
-        fun decodeList(encoded: String): List<String> =
-            if (encoded.isBlank()) emptyList()
-            else encoded.split("|").map { it.trim() }.filter { it.isNotBlank() }
+        fun decodeFrequencies(json: String): Map<Emotion, Int> {
+            if (json == "{}") return emptyMap()
+            return json.removeSurrounding("{", "}").split(",")
+                .mapNotNull { pair ->
+                    val parts = pair.split(":")
+                    if (parts.size == 2) {
+                        val emotion = Emotion.fromLabel(parts[0].trim().removeSurrounding("\""))
+                        val count = parts[1].trim().toIntOrNull() ?: 0
+                        emotion to count
+                    } else null
+                }.toMap()
+        }
+        fun decodeList(json: String): List<String> =
+            json.removeSurrounding("[", "]").split(",")
+                .map { it.trim().removeSurrounding("\"") }
+                .filter { it.isNotBlank() }
         return WeeklyInsight(
             id = id,
             weekStartTimestamp = weekStartTimestamp,
             dominantEmotion = Emotion.fromLabel(dominantEmotion),
-            moodAverage = moodAverage,
-            checkInCount = checkInCount,
-            topThemes = decodeList(topThemesJson),
-            narrative = narrative,
-            suggestedNextSteps = decodeList(suggestedNextStepsJson),
-            generatedAt = generatedAt
+            emotionFrequencies = decodeFrequencies(emotionFrequencies),
+            summary = summary,
+            trackedGoals = decodeList(trackedGoals),
+            createdAt = createdAt
         )
     }
 }

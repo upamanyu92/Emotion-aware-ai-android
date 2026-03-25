@@ -1,16 +1,20 @@
 package com.example.emotionawareai.domain.model
 
 /**
- * An AI-generated weekly growth insight report.
+ * Domain representation of a weekly emotional pattern summary.
+ *
+ * Generated once per week by aggregating [MemoryFragment]s and message history.
  */
 data class WeeklyInsight(
     val id: Long = 0L,
+    /** Epoch millis for the Monday that begins this week. */
     val weekStartTimestamp: Long,
     val dominantEmotion: Emotion,
-    val moodAverage: Float,          // 1.0–5.0
-    val checkInCount: Int,
-    val topThemes: List<String>,     // e.g. ["work stress", "sleep"]
-    val narrative: String,           // AI-generated summary paragraph
-    val suggestedNextSteps: List<String>,
-    val generatedAt: Long = System.currentTimeMillis()
+    /** Occurrence count per detected emotion over the week. */
+    val emotionFrequencies: Map<Emotion, Int>,
+    /** AI-generated narrative summary of the week's patterns. */
+    val summary: String,
+    /** Goals mentioned or tracked during this week. */
+    val trackedGoals: List<String>,
+    val createdAt: Long = System.currentTimeMillis()
 )

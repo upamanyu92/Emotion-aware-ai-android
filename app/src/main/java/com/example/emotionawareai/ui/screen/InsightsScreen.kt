@@ -52,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.emotionawareai.domain.model.Emotion
 import com.example.emotionawareai.domain.model.WeeklyInsight
 import com.example.emotionawareai.ui.ChatViewModel
 import com.example.emotionawareai.ui.theme.GlassBorder
@@ -118,9 +119,7 @@ fun InsightsScreen(viewModel: ChatViewModel) {
                 }
 
                 if (latestInsight != null) {
-                    item {
-                        InsightCard(insight = latestInsight, isLatest = true)
-                    }
+                    item { InsightCard(insight = latestInsight, isLatest = true) }
                     if (insights.size > 1) {
                         item {
                             Text(
@@ -152,7 +151,7 @@ fun InsightsScreen(viewModel: ChatViewModel) {
                                 )
                                 Spacer(Modifier.height(6.dp))
                                 Text(
-                                    "Chat with Ash and check in daily to generate your first weekly growth report.",
+                                    "Chat with your companion and check in daily to generate your first weekly growth report.",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = Color.White.copy(alpha = 0.6f),
                                     textAlign = TextAlign.Center
@@ -178,7 +177,11 @@ private fun InsightCard(insight: WeeklyInsight, isLatest: Boolean) {
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(GlassCard)
-            .border(1.dp, if (isLatest) NeonCyan.copy(alpha = 0.5f) else GlassBorder, RoundedCornerShape(16.dp))
+            .border(
+                1.dp,
+                if (isLatest) NeonCyan.copy(alpha = 0.5f) else GlassBorder,
+                RoundedCornerShape(16.dp)
+            )
             .padding(16.dp)
     ) {
         Row(
@@ -193,7 +196,7 @@ private fun InsightCard(insight: WeeklyInsight, isLatest: Boolean) {
                     color = if (isLatest) NeonCyan else Color.White
                 )
                 Text(
-                    text = moodScoreEmoji(insight.moodAverage),
+                    text = "${insight.dominantEmotion.emoji} ${insight.dominantEmotion.displayName}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.White.copy(alpha = 0.8f)
                 )
@@ -216,49 +219,54 @@ private fun InsightCard(insight: WeeklyInsight, isLatest: Boolean) {
                 Spacer(Modifier.height(8.dp))
 
                 Text(
-                    text = insight.narrative,
+                    text = insight.summary,
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.White.copy(alpha = 0.9f)
                 )
 
-                if (insight.topThemes.isNotEmpty()) {
+                if (insight.emotionFrequencies.isNotEmpty()) {
                     Text(
-                        "Themes this week",
+                        "Emotion breakdown",
                         style = MaterialTheme.typography.labelMedium,
                         color = NeonGold
                     )
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        insight.topThemes.forEach { theme ->
-                            FilterChip(
-                                selected = false,
-                                onClick = {},
-                                label = {
-                                    Text(
-                                        theme,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = Color.White
+                        insight.emotionFrequencies.entries
+                            .sortedByDescending { it.value }
+                            .take(5)
+                            .forEach { (emotion, count) ->
+                                FilterChip(
+                                    selected = emotion == insight.dominantEmotion,
+                                    onClick = {},
+                                    label = {
+                                        Text(
+                                            "${emotion.emoji} ${emotion.displayName} ×$count",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color.White
+                                        )
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        containerColor = NeonPurple.copy(alpha = 0.25f),
+                                        selectedContainerColor = NeonPurple.copy(alpha = 0.45f)
+                                    ),
+                                    border = FilterChipDefaults.filterChipBorder(
+                                        enabled = true,
+                                        selected = emotion == insight.dominantEmotion,
+                                        borderColor = NeonPurple.copy(alpha = 0.4f),
+                                        selectedBorderColor = NeonCyan.copy(alpha = 0.7f)
                                     )
-                                },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    containerColor = NeonPurple.copy(alpha = 0.25f)
-                                ),
-                                border = FilterChipDefaults.filterChipBorder(
-                                    enabled = true,
-                                    selected = false,
-                                    borderColor = NeonPurple.copy(alpha = 0.4f)
                                 )
-                            )
-                        }
+                            }
                     }
                 }
 
-                if (insight.suggestedNextSteps.isNotEmpty()) {
+                if (insight.trackedGoals.isNotEmpty()) {
                     Text(
-                        "Suggested next steps",
+                        "Goals tracked this week",
                         style = MaterialTheme.typography.labelMedium,
                         color = NeonGold
                     )
-                    insight.suggestedNextSteps.forEach { step ->
+                    insight.trackedGoals.forEach { goal ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -267,53 +275,16 @@ private fun InsightCard(insight: WeeklyInsight, isLatest: Boolean) {
                                 .padding(10.dp),
                             verticalAlignment = Alignment.Top
                         ) {
-                            Text("→ ", color = NeonCyan, style = MaterialTheme.typography.bodySmall)
+                            Text("🎯 ", color = NeonCyan, style = MaterialTheme.typography.bodySmall)
                             Text(
-                                step,
+                                goal,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color.White.copy(alpha = 0.85f)
                             )
                         }
                     }
                 }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            "${insight.checkInCount}",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                            color = NeonCyan
-                        )
-                        Text(
-                            "check-ins",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White.copy(alpha = 0.6f)
-                        )
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            insight.dominantEmotion.emoji,
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(
-                            "mood",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White.copy(alpha = 0.6f)
-                        )
-                    }
-                }
             }
         }
     }
-}
-
-private fun moodScoreEmoji(avg: Float): String {
-    val stars = when {
-        avg >= 4.5f -> "😄😄😄😄😄"
-        avg >= 3.5f -> "😊😊😊😊"
-        avg >= 2.5f -> "😐😐😐"
-        avg >= 1.5f -> "😢😢"
-        else -> "😢"
-    }
-    return "Mood: $stars (${String.format("%.1f", avg)}/5)"
 }

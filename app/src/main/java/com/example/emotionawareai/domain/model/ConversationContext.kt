@@ -2,6 +2,9 @@ package com.example.emotionawareai.domain.model
 
 /**
  * Encapsulates all context needed to build an LLM prompt for a single turn.
+ *
+ * [retrievedMemories] contains long-term memory fragments surfaced by the RAG
+ * layer and injected into the prompt under the [LONG-TERM MEMORY] tag.
  */
 data class ConversationContext(
     val conversationId: Long,
@@ -10,35 +13,36 @@ data class ConversationContext(
     val audioToneEmotion: Emotion = Emotion.UNKNOWN,
     val recentHistory: List<ChatMessage>,
     val systemStyle: ResponseStyle = ResponseStyle.EMPATHETIC,
-    val userGoals: List<String> = emptyList(),
-    val recurringThemes: List<String> = emptyList()
+    val retrievedMemories: List<MemoryFragment> = emptyList()
 ) {
     /**
      * Builds the structured prompt fed to the LLM.
+     *
+     * The system block embeds the mental-health companion persona, real-time
+     * emotion signals, and injected long-term memories so the model can
+     * provide contextually aware, growth-oriented responses.
      */
     fun buildPrompt(): String = buildString {
-        appendLine("[SYSTEM] You are Ash, a warm and empathetic AI companion focused on personal growth and mental wellness.")
-        appendLine("You draw on evidence-based approaches (CBT, motivational interviewing) without being clinical.")
-        appendLine("You are not a therapist, doctor, or crisis service — always encourage professional support when appropriate.")
-        appendLine("Always respond with compassion, curiosity, and non-judgment. Help users reflect, identify patterns, and take small steps forward.")
-        appendLine(detectedEmotion.systemPromptHint)
+        appendLine(SYSTEM_PROMPT)
+        appendLine("Current emotional signal: ${detectedEmotion.systemPromptHint}")
         if (audioToneEmotion != Emotion.UNKNOWN && audioToneEmotion != Emotion.NEUTRAL) {
-            appendLine("Voice tone hint: user may sound ${audioToneEmotion.displayName.lowercase()} — acknowledge this gently if relevant.")
+            appendLine("Voice tone hint: user may sound ${audioToneEmotion.displayName.lowercase()}.")
         }
         appendLine("Response style: ${systemStyle.description}")
-        if (userGoals.isNotEmpty()) {
-            appendLine("User's current growth goals: ${userGoals.joinToString(", ")}.")
+
+        if (retrievedMemories.isNotEmpty()) {
+            appendLine()
+            appendLine("[LONG-TERM MEMORY]")
+            retrievedMemories.forEach { memory ->
+                appendLine("- [${memory.type.label}] ${memory.content}")
+            }
         }
-        if (recurringThemes.isNotEmpty()) {
-            appendLine("Recurring themes in recent conversations: ${recurringThemes.joinToString(", ")}.")
-        }
-        appendLine("Keep replies concise (2-4 sentences) unless the user asks for more. Never diagnose. Refer to crisis resources if safety is a concern.")
 
         if (recentHistory.isNotEmpty()) {
             appendLine()
             appendLine("[CONTEXT]")
             recentHistory.takeLast(MAX_HISTORY_TURNS).forEach { msg ->
-                val roleTag = if (msg.isFromUser) "User" else "Ash"
+                val roleTag = if (msg.isFromUser) "User" else "Assistant"
                 appendLine("$roleTag: ${msg.content}")
             }
         }
@@ -50,12 +54,26 @@ data class ConversationContext(
 
     companion object {
         private const val MAX_HISTORY_TURNS = 6
+
+        /**
+         * Mental health companion persona injected at the start of every prompt.
+         *
+         * Governs tone, safety boundaries, and interaction style.
+         * Update this constant (rather than [buildPrompt]) to iterate on the persona.
+         */
+        const val SYSTEM_PROMPT = """[SYSTEM] You are an empathetic, insightful, and zero-judgment AI companion dedicated to the user's personal growth and mental well-being.
+Core Directives:
+- Tone: Warm, conversational, grounded, and entirely non-judgmental. Speak like a supportive mentor or a thoughtful sounding board.
+- Active Listening & Memory: Seamlessly integrate context from past conversations. When appropriate, gently connect current feelings or situations to past patterns you have observed to help the user gain self-awareness.
+- Guided Discovery: Do not preach or instantly solve problems. Use the Socratic method—ask thoughtful, open-ended questions that guide the user to their own realizations.
+- Accountability: Track the user's stated goals. Check in on their progress gently, celebrating small wins and offering supportive reframing during setbacks.
+- Safety & Boundaries: You are a supportive tool, not a licensed therapist. If the user expresses severe distress, crisis, or self-harm, immediately provide appropriate emergency resources and encourage professional help. Never offer medical diagnoses."""
     }
 }
 
 enum class ResponseStyle(val description: String) {
-    EMPATHETIC("Warm, compassionate, and emotionally attuned — validates feelings before advising"),
-    CONCISE("Brief and supportive — acknowledges feelings then offers a focused reflection"),
-    DETAILED("Thorough and exploratory — digs deeper into patterns and emotions"),
-    PLAYFUL("Light-hearted and encouraging — builds on positives with gentle humor")
+    EMPATHETIC("Warm, supportive, and emotionally aware"),
+    CONCISE("Brief and to-the-point"),
+    DETAILED("Thorough and informative"),
+    PLAYFUL("Light-hearted and friendly")
 }

@@ -103,6 +103,11 @@ class ChatViewModelSpeechVideoTest {
         coEvery { memoryManager.isCameraEnabled() } returns true
         coEvery { memoryManager.isCameraPreviewVisible() } returns true
         coEvery { memoryManager.isCaptionsEnabled() } returns true
+        coEvery { memoryManager.getGrowthAreas() } returns emptyList()
+        coEvery { memoryManager.getCheckInFrequency() } returns "daily"
+        coEvery { memoryManager.isPrivacyNoticeShown() } returns true
+        coEvery { memoryManager.getLastCheckInDate() } returns ""
+        every { memoryManager.observeActiveGoals() } returns flowOf(emptyList())
         coEvery { responseEngine.loadModel() } returns true
         every { responseEngine.isModelFileAvailable() } returns false
         every { responseEngine.modelFilePath() } returns "/data/user/0/com.example.emotionawareai/files/models/model.gguf"
@@ -133,7 +138,9 @@ class ChatViewModelSpeechVideoTest {
             voiceProcessor = voiceProcessor,
             memoryManager = memoryManager,
             audioToneAnalyzer = audioToneAnalyzer,
-            billingManager = billingManager
+            billingManager = billingManager,
+            moodCheckInDao = moodCheckInDao,
+            insightsGenerator = insightsGenerator
         )
     }
 
