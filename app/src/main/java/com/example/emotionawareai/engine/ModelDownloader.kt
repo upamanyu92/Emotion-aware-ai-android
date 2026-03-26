@@ -168,20 +168,49 @@ class ModelDownloader @Inject constructor(
             var currentUrl = URL(BITNET_MODEL_URL)
             var redirectsLeft = MAX_REDIRECTS
             while (redirectsLeft-- > 0) {
+                if (!isActive) {
+                    Log.i(TAG, "Download cancelled before connecting")
+                    return@withContext false
+                }
+
                 val conn = currentUrl.openConnection() as HttpURLConnection
                 conn.connectTimeout = CONNECT_TIMEOUT_MS
                 conn.readTimeout = READ_TIMEOUT_MS
                 conn.instanceFollowRedirects = false
+                conn.requestMethod = "GET"
+                // Add user agent to avoid bot detection
+                conn.setRequestProperty("User-Agent", "EmotionAwareAI/1.0 (Android)")
                 connection = conn
 
-                val code = conn.responseCode
-                if (code in 300..399) {
-                    val location = conn.getHeaderField("Location")
-                    conn.disconnect()
-                    connection = null
-                    currentUrl = URL(location)
-                } else {
-                    break
+                try {
+                    conn.connect()
+                    val code = conn.responseCode
+                    Log.d(TAG, "HTTP response code: $code for URL: $currentUrl")
+
+                    if (code in 300..399) {
+                        val location = conn.getHeaderField("Location")
+                        if (location == null) {
+                            Log.e(TAG, "Redirect response but no Location header")
+                            return@withContext false
+                        }
+                        Log.d(TAG, "Following redirect to: $location")
+                        conn.disconnect()
+                        connection = null
+                        currentUrl = URL(location)
+                    } else if (code == HttpURLConnection.HTTP_OK) {
+                        break
+                    } else {
+                        Log.e(TAG, "HTTP $code downloading BitNet model from $currentUrl")
+                        val errorStream = conn.errorStream
+                        if (errorStream != null) {
+                            val errorBody = errorStream.bufferedReader().use { it.readText() }
+                            Log.e(TAG, "Error response body: ${errorBody.take(500)}")
+                        }
+                        return@withContext false
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error connecting to $currentUrl", e)
+                    throw e
                 }
             }
 
@@ -197,6 +226,7 @@ class ModelDownloader @Inject constructor(
             }
 
             val contentLength = conn.contentLengthLong
+            Log.i(TAG, "Starting download, content length: $contentLength bytes")
             var bytesRead = 0L
             var downloadComplete = false
 
@@ -218,6 +248,11 @@ class ModelDownloader @Inject constructor(
                             -1f
                         }
                         onProgress(progress)
+
+                        // Log progress periodically
+                        if (bytesRead % (10 * 1024 * 1024) == 0L) {
+                            Log.d(TAG, "Downloaded $bytesRead bytes...")
+                        }
                     }
                     downloadComplete = true
                 }
