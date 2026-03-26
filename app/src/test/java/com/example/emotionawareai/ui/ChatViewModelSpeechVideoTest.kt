@@ -115,6 +115,11 @@ class ChatViewModelSpeechVideoTest {
         every { responseEngine.isModelFileAvailable() } returns false
         every { responseEngine.modelFilePath() } returns "/data/user/0/com.example.emotionawareai/files/models/model.gguf"
 
+        // ModelDownloader state flows — idle by default so ViewModel init doesn't trigger load
+        every { modelDownloader.isDownloading } returns MutableStateFlow(false)
+        every { modelDownloader.downloadProgress } returns MutableStateFlow(null)
+        every { modelDownloader.downloadFailed } returns MutableStateFlow(false)
+
         coEvery { conversationManager.buildContext(any(), any(), any(), any()) } returns mockk(relaxed = true)
         every { responseEngine.generateResponse(any()) } returns flowOf("ok")
 

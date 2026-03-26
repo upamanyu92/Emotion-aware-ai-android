@@ -3,8 +3,15 @@ package com.example.emotionawareai.engine
 import android.content.Context
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
@@ -17,17 +24,100 @@ import javax.inject.Singleton
  * Downloads the Microsoft BitNet b1.58 2B GGUF model from HuggingFace and
  * saves it to the app-private model directory so [LLMEngine] can load it.
  *
- * The download is co-routine-cancellable: if the calling coroutine is cancelled
- * the connection is closed and any partial file is deleted.
- *
- * Progress is reported as a [Float] in `[0, 1]` via the [onProgress] callback.
- * When the server does not report a Content-Length the value is `-1f`
- * (indeterminate).
+ * This class owns its own process-lifetime [CoroutineScope] so downloads can
+ * be started from [Application.onCreate] before any Activity or ViewModel
+ * exists. Progress and downloading state are exposed as [StateFlow]s that any
+ * observer (e.g. [ChatViewModel]) can collect.
  */
 @Singleton
 class ModelDownloader @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
+
+    /** Process-lifetime scope. Lives as long as the app process. */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    @Volatile private var downloadJob: Job? = null
+
+    private val _isDownloading = MutableStateFlow(false)
+    /** `true` while the BitNet model is being fetched from the network. */
+    val isDownloading: StateFlow<Boolean> = _isDownloading.asStateFlow()
+
+    private val _downloadProgress = MutableStateFlow<Float?>(null)
+    /**
+     * Download progress in `[0, 1]`, `-1f` when content-length is unknown,
+     * or `null` when no download is in progress.
+     */
+    val downloadProgress: StateFlow<Float?> = _downloadProgress.asStateFlow()
+
+    private val _downloadFailed = MutableStateFlow(false)
+    /** Becomes `true` when the last download attempt ended in failure. */
+    val downloadFailed: StateFlow<Boolean> = _downloadFailed.asStateFlow()
+
+    // ── Public API ────────────────────────────────────────────────────────────
+
+    /**
+     * Starts a background download if the model is **not** already present.
+     *
+     * Safe to call from [Application.onCreate]: it is non-blocking and
+     * idempotent — subsequent calls while a download is already running are
+     * ignored, and calls when the file is present return immediately.
+     */
+    @Synchronized
+    fun startDownloadIfAbsent(
+        modelFileName: String = LLMEngine.DEFAULT_MODEL_FILE
+    ) {
+        if (_isDownloading.value) return
+        if (ModelFileLocator.isAvailable(context.filesDir, modelFileName)) {
+            Log.i(TAG, "Model already present — skipping download")
+            return
+        }
+        launchDownload(modelFileName)
+    }
+
+    /**
+     * Starts a background download unconditionally, overwriting any existing
+     * file. No-op if a download is already running.
+     */
+    @Synchronized
+    fun startDownload(
+        modelFileName: String = LLMEngine.DEFAULT_MODEL_FILE
+    ) {
+        if (_isDownloading.value) return
+        launchDownload(modelFileName)
+    }
+
+    /** Cancels any in-progress download. */
+    @Synchronized
+    fun cancelDownload() {
+        downloadJob?.cancel()
+        downloadJob = null
+        _isDownloading.value = false
+        _downloadProgress.value = null
+        Log.i(TAG, "BitNet model download cancelled")
+    }
+
+    private fun launchDownload(modelFileName: String) {
+        downloadJob = scope.launch {
+            _downloadFailed.value = false
+            _isDownloading.value = true
+            _downloadProgress.value = 0f
+            try {
+                val success = downloadBlocking(modelFileName) { progress ->
+                    _downloadProgress.value = progress
+                }
+                if (!success) {
+                    _downloadFailed.value = true
+                    Log.e(TAG, "BitNet model download failed")
+                }
+            } finally {
+                _isDownloading.value = false
+                _downloadProgress.value = null
+            }
+        }
+    }
+
+    // ── Suspend helpers (also usable from callers with their own scope) ───────
 
     /**
      * Downloads the BitNet model only when it is not already present on-device.
@@ -46,7 +136,7 @@ class ModelDownloader @Inject constructor(
             Log.i(TAG, "Model already present — skipping download")
             return@withContext true
         }
-        download(modelFileName, onProgress)
+        downloadBlocking(modelFileName, onProgress)
     }
 
     /**
@@ -58,6 +148,15 @@ class ModelDownloader @Inject constructor(
     suspend fun download(
         modelFileName: String = LLMEngine.DEFAULT_MODEL_FILE,
         onProgress: (Float) -> Unit = {}
+    ): Boolean = withContext(Dispatchers.IO) {
+        downloadBlocking(modelFileName, onProgress)
+    }
+
+    // ── Private implementation ────────────────────────────────────────────────
+
+    private suspend fun downloadBlocking(
+        modelFileName: String,
+        onProgress: (Float) -> Unit
     ): Boolean = withContext(Dispatchers.IO) {
         val modelsDir = File(context.filesDir, "models").also { it.mkdirs() }
         val target = File(modelsDir, modelFileName)
