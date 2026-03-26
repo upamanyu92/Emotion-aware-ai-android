@@ -7,6 +7,7 @@ import com.example.emotionawareai.domain.model.ActivityCaption
 import com.example.emotionawareai.billing.BillingManager
 import com.example.emotionawareai.engine.ActivityAnalyzer
 import com.example.emotionawareai.engine.EmotionDetector
+import com.example.emotionawareai.engine.ModelDownloader
 import com.example.emotionawareai.data.database.MoodCheckInDao
 import com.example.emotionawareai.manager.ConversationManager
 import com.example.emotionawareai.manager.InsightsGenerator
@@ -57,6 +58,7 @@ class ChatViewModelSpeechVideoTest {
     private lateinit var billingManager: BillingManager
     private lateinit var moodCheckInDao: MoodCheckInDao
     private lateinit var insightsGenerator: InsightsGenerator
+    private lateinit var modelDownloader: ModelDownloader
 
     private lateinit var viewModel: ChatViewModel
 
@@ -84,6 +86,7 @@ class ChatViewModelSpeechVideoTest {
         billingManager = mockk(relaxed = true)
         moodCheckInDao = mockk(relaxed = true)
         insightsGenerator = mockk(relaxed = true)
+        modelDownloader = mockk(relaxed = true)
 
         coEvery { insightsGenerator.getLatestInsight() } returns null
         every { insightsGenerator.observeInsights() } returns flowOf(emptyList())
@@ -140,7 +143,8 @@ class ChatViewModelSpeechVideoTest {
             audioToneAnalyzer = audioToneAnalyzer,
             billingManager = billingManager,
             moodCheckInDao = moodCheckInDao,
-            insightsGenerator = insightsGenerator
+            insightsGenerator = insightsGenerator,
+            modelDownloader = modelDownloader
         )
     }
 

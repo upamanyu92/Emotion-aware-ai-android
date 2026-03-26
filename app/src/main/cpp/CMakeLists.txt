@@ -27,6 +27,13 @@ target_link_libraries(
     android
 )
 
-# When integrating llama.cpp, add its source files here:
-# add_subdirectory(llama.cpp)
+# When integrating bitnet.cpp (Microsoft's 1-bit LLM runtime), add its
+# source files here. bitnet.cpp is a fork of llama.cpp with optimised 1-bit
+# kernels for ARM64 dotprod/i8mm.
+#
+# Step 1: clone bitnet.cpp into app/src/main/cpp/bitnet.cpp
+#   git submodule add https://github.com/microsoft/BitNet.git app/src/main/cpp/bitnet.cpp
+#
+# Step 2: uncomment the two lines below and remove the stub add_library block:
+# add_subdirectory(bitnet.cpp)
 # target_link_libraries(llm_engine llama ${log-lib} android)
