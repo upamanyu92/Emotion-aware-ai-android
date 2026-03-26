@@ -1,10 +1,13 @@
 package com.example.emotionawareai.engine
 
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.io.ByteArrayInputStream
 import java.io.File
 
 /**
@@ -67,5 +70,57 @@ class LLMEngineTest {
 
         assertTrue(ModelFileLocator.isAvailable(tempDir, "custom_model.gguf"))
         assertFalse(ModelFileLocator.isAvailable(tempDir, "other_model.gguf"))
+    }
+
+    @Test
+    fun `installFromInputStream creates model file with correct content`() {
+        val content = "fake gguf model bytes".toByteArray()
+        val result = ModelFileLocator.installFromInputStream(
+            tempDir,
+            ByteArrayInputStream(content),
+            LLMEngine.DEFAULT_MODEL_FILE
+        )
+
+        assertTrue("installFromInputStream should return true on success", result)
+        assertTrue(
+            "Model file should exist after installation",
+            ModelFileLocator.isAvailable(tempDir, LLMEngine.DEFAULT_MODEL_FILE)
+        )
+        val written = File(tempDir, "models/${LLMEngine.DEFAULT_MODEL_FILE}").readBytes()
+        assertArrayEquals("Written bytes should match input stream content", content, written)
+    }
+
+    @Test
+    fun `installFromInputStream creates models directory if absent`() {
+        // tempDir has no 'models' subdirectory yet
+        val result = ModelFileLocator.installFromInputStream(
+            tempDir,
+            ByteArrayInputStream(ByteArray(0)),
+            LLMEngine.DEFAULT_MODEL_FILE
+        )
+
+        assertTrue("Should succeed even when models dir does not exist", result)
+        assertTrue(File(tempDir, "models").isDirectory)
+    }
+
+    @Test
+    fun `installFromInputStream overwrites existing model file`() {
+        // Install a first version
+        ModelFileLocator.installFromInputStream(
+            tempDir,
+            ByteArrayInputStream("version1".toByteArray()),
+            LLMEngine.DEFAULT_MODEL_FILE
+        )
+
+        // Overwrite with a second version
+        val result = ModelFileLocator.installFromInputStream(
+            tempDir,
+            ByteArrayInputStream("version2".toByteArray()),
+            LLMEngine.DEFAULT_MODEL_FILE
+        )
+
+        assertTrue("Second install should succeed", result)
+        val content = File(tempDir, "models/${LLMEngine.DEFAULT_MODEL_FILE}").readText()
+        assertEquals("File should contain the latest content", "version2", content)
     }
 }

@@ -1,6 +1,8 @@
 package com.example.emotionawareai.ui.screen
 
 import android.app.Activity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -20,16 +22,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Camera
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.ClosedCaptionDisabled
 import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -42,6 +48,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,6 +64,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.emotionawareai.ui.ChatViewModel
+import com.example.emotionawareai.ui.ModelInstallState
 import com.example.emotionawareai.ui.theme.GlassBorder
 import com.example.emotionawareai.ui.theme.GlassCard
 import com.example.emotionawareai.ui.theme.GradEnd
@@ -80,9 +88,30 @@ fun SettingsScreen(viewModel: ChatViewModel) {
     val isPremiumUser by viewModel.isPremiumUser.collectAsStateWithLifecycle()
     val checkInFrequency by viewModel.checkInFrequency.collectAsStateWithLifecycle()
     val growthAreas by viewModel.growthAreas.collectAsStateWithLifecycle()
+    val isModelAvailable by viewModel.isModelAvailable.collectAsStateWithLifecycle()
+    val isModelLoaded by viewModel.isModelLoaded.collectAsStateWithLifecycle()
+    val modelInstallState by viewModel.modelInstallState.collectAsStateWithLifecycle()
     val activity = LocalContext.current as? Activity
+    val context = LocalContext.current
 
     var showDeleteDialog by remember { mutableStateOf(false) }
+
+    // File picker launcher: accepts any file type so users can select .gguf files
+    val modelFileLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let { viewModel.installModelFromUri(context, it) }
+    }
+
+    // Auto-dismiss SUCCESS/ERROR after a short delay so the user sees confirmation
+    LaunchedEffect(modelInstallState) {
+        if (modelInstallState == ModelInstallState.SUCCESS ||
+            modelInstallState == ModelInstallState.ERROR
+        ) {
+            kotlinx.coroutines.delay(3_000)
+            viewModel.dismissModelInstallState()
+        }
+    }
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -143,6 +172,100 @@ fun SettingsScreen(viewModel: ChatViewModel) {
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (isPremiumUser) NeonCyan else Color.White.copy(alpha = 0.5f)
                             )
+                        }
+                    }
+                }
+
+                item {
+                    SettingsSection("AI Model") {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Psychology,
+                                contentDescription = null,
+                                tint = if (isModelLoaded) NeonCyan else NeonPurple,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = when {
+                                        isModelLoaded -> "Model loaded"
+                                        isModelAvailable -> "Model installed (not loaded)"
+                                        else -> "No model installed"
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = if (isModelLoaded) NeonCyan else Color.White
+                                )
+                                Text(
+                                    text = when {
+                                        isModelLoaded -> "On-device inference active"
+                                        isModelAvailable -> viewModel.getModelFilePath()
+                                        else -> "Install a .gguf model file to enable on-device AI"
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White.copy(alpha = 0.6f)
+                                )
+                            }
+                            if (isModelLoaded) {
+                                Icon(
+                                    imageVector = Icons.Filled.CheckCircle,
+                                    contentDescription = "Loaded",
+                                    tint = NeonCyan,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        HorizontalDivider(color = GlassBorder)
+                        Button(
+                            onClick = { modelFileLauncher.launch(arrayOf("*/*")) },
+                            enabled = modelInstallState != ModelInstallState.INSTALLING,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = NeonPurple.copy(alpha = 0.25f),
+                                disabledContainerColor = NeonPurple.copy(alpha = 0.10f)
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            when (modelInstallState) {
+                                ModelInstallState.INSTALLING -> {
+                                    CircularProgressIndicator(
+                                        color = NeonPurple,
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(Modifier.size(8.dp))
+                                    Text("Installing…", color = Color.White)
+                                }
+                                ModelInstallState.SUCCESS -> {
+                                    Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = NeonCyan)
+                                    Spacer(Modifier.size(8.dp))
+                                    Text("Installed!", color = NeonCyan)
+                                }
+                                ModelInstallState.ERROR -> {
+                                    Icon(Icons.Filled.Info, contentDescription = null, tint = NeonRose)
+                                    Spacer(Modifier.size(8.dp))
+                                    Text("Installation failed", color = NeonRose)
+                                }
+                                else -> {
+                                    Icon(
+                                        Icons.Filled.FolderOpen,
+                                        contentDescription = null,
+                                        tint = NeonPurple
+                                    )
+                                    Spacer(Modifier.size(8.dp))
+                                    Text(
+                                        if (isModelAvailable) "Replace model file" else "Load model file (.gguf)",
+                                        color = Color.White
+                                    )
+                                }
+                            }
                         }
                     }
                 }

@@ -92,6 +92,20 @@ class ResponseEngine @Inject constructor(
         llmEngine.loadModel()
     }
 
+    /** Returns `true` if a model is currently loaded and ready for inference. */
+    val isModelLoaded: Boolean get() = llmEngine.isLoaded
+
+    /**
+     * Copies model data from [inputStream] into the expected on-device location,
+     * releases any previously loaded model, and immediately loads the new file.
+     *
+     * @return `true` if the file was installed and the model loaded successfully.
+     */
+    suspend fun installAndLoadModel(inputStream: java.io.InputStream): Boolean =
+        withContext(Dispatchers.IO) {
+            llmEngine.installAndLoadModel(inputStream)
+        }
+
     /**
      * Returns `true` if the model file is present on-disk (without loading it).
      * Delegates to [LLMEngine.isModelFileAvailable].
