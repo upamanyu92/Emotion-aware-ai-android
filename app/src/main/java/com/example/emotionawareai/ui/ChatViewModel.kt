@@ -1,7 +1,9 @@
 package com.example.emotionawareai.ui
 
 import android.app.Activity
+import android.content.Context
 import android.graphics.Bitmap
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -40,6 +42,9 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+/** Represents the lifecycle of an in-app model file installation. */
+enum class ModelInstallState { IDLE, INSTALLING, SUCCESS, ERROR }
 
 @HiltViewModel
 class ChatViewModel @Inject constructor(
@@ -86,6 +91,9 @@ class ChatViewModel @Inject constructor(
 
     private val _isModelAvailable = MutableStateFlow(false)
     val isModelAvailable: StateFlow<Boolean> = _isModelAvailable.asStateFlow()
+
+    private val _modelInstallState = MutableStateFlow(ModelInstallState.IDLE)
+    val modelInstallState: StateFlow<ModelInstallState> = _modelInstallState.asStateFlow()
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
@@ -761,6 +769,50 @@ class ChatViewModel @Inject constructor(
 
     /** Returns the expected on-device path for the LLM model file. */
     fun getModelFilePath(): String = responseEngine.modelFilePath()
+
+    /**
+     * Installs a model file from [uri] (obtained via the system file picker),
+     * copies it to the app-private models directory, and reloads the inference
+     * engine. Emits progress via [modelInstallState].
+     *
+     * Only files whose name ends with `.gguf` are accepted; other files produce
+     * an [ModelInstallState.ERROR] state without writing anything to disk.
+     */
+    fun installModelFromUri(context: Context, uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _modelInstallState.update { ModelInstallState.INSTALLING }
+            try {
+                // Validate file extension before reading potentially large data.
+                val fileName = uri.lastPathSegment ?: ""
+                if (!fileName.endsWith(".gguf", ignoreCase = true)) {
+                    Log.e(TAG, "Rejected non-.gguf file: $fileName (URI: $uri)")
+                    _modelInstallState.update { ModelInstallState.ERROR }
+                    return@launch
+                }
+                val inputStream = context.contentResolver.openInputStream(uri)
+                if (inputStream == null) {
+                    Log.e(TAG, "Could not open InputStream for URI: $uri")
+                    _modelInstallState.update { ModelInstallState.ERROR }
+                    return@launch
+                }
+                val success = inputStream.use { responseEngine.installAndLoadModel(it) }
+                _isModelAvailable.update { responseEngine.isModelFileAvailable() }
+                _isModelLoaded.update { responseEngine.isModelLoaded }
+                updateAiActiveState()
+                _modelInstallState.update {
+                    if (success) ModelInstallState.SUCCESS else ModelInstallState.ERROR
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error installing model from URI", e)
+                _modelInstallState.update { ModelInstallState.ERROR }
+            }
+        }
+    }
+
+    /** Resets [modelInstallState] back to [ModelInstallState.IDLE]. */
+    fun dismissModelInstallState() {
+        _modelInstallState.update { ModelInstallState.IDLE }
+    }
 
     fun cancelGeneration() {
         Log.i(TAG, "cancelGeneration")

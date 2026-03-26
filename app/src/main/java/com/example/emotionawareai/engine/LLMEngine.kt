@@ -68,6 +68,26 @@ class LLMEngine @Inject constructor(
         }
 
     /**
+     * Copies model data from [inputStream] into the expected on-device location and
+     * immediately loads the installed model. If a model is already loaded it is
+     * released first so the new file takes effect.
+     *
+     * @return `true` if the file was installed and loaded successfully.
+     */
+    suspend fun installAndLoadModel(
+        inputStream: java.io.InputStream,
+        modelFileName: String = DEFAULT_MODEL_FILE
+    ): Boolean = withContext(Dispatchers.IO) {
+        // Release any previously loaded model before overwriting the file.
+        release()
+        val installed = ModelFileLocator.installFromInputStream(
+            context.filesDir, inputStream, modelFileName
+        )
+        if (!installed) return@withContext false
+        loadModel(modelFileName)
+    }
+
+    /**
      * Generates a response token-by-token for [prompt].
      * Each emitted [String] is one or more tokens; collect them to build the
      * full response.
