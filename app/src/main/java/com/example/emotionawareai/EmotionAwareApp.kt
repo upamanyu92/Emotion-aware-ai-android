@@ -2,14 +2,28 @@ package com.example.emotionawareai
 
 import android.app.Application
 import android.util.Log
+import com.example.emotionawareai.engine.ModelDownloader
 import dagger.hilt.android.HiltAndroidApp
+import javax.inject.Inject
 
 @HiltAndroidApp
 class EmotionAwareApp : Application() {
 
+    /**
+     * [ModelDownloader] is a Hilt singleton. Injecting it here lets us kick
+     * off the BitNet model download the moment the app process is created —
+     * well before any Activity or ViewModel is alive.
+     */
+    @Inject lateinit var modelDownloader: ModelDownloader
+
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "EmotionAwareAI application starting")
+
+        // Start downloading the BitNet model immediately so it is ready
+        // (or well on its way) by the time the user reaches the main screen.
+        // startDownloadIfAbsent() is a no-op when the file is already present.
+        modelDownloader.startDownloadIfAbsent()
     }
 
     override fun onLowMemory() {

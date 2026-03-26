@@ -15,8 +15,10 @@ import javax.inject.Singleton
 /**
  * Kotlin facade over the native LLM inference engine.
  *
- * The actual inference is handled by [llm_engine.cpp] via JNI. Swap the stub
- * implementation for llama.cpp by following the integration points in that file.
+ * The actual inference is handled by [llm_engine.cpp] via JNI. The model file
+ * is the Microsoft BitNet b1.58 GGUF downloaded by [ModelDownloader]. To
+ * activate real on-device inference, uncomment the bitnet.cpp integration
+ * points in llm_engine.cpp and add bitnet.cpp as a CMake sub-directory.
  */
 @Singleton
 class LLMEngine @Inject constructor(

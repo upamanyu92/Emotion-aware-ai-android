@@ -17,6 +17,7 @@ import com.example.emotionawareai.billing.PremiumPlanType
 import com.example.emotionawareai.domain.model.PremiumFeature
 import com.example.emotionawareai.engine.ActivityAnalyzer
 import com.example.emotionawareai.engine.EmotionDetector
+import com.example.emotionawareai.engine.ModelDownloader
 import com.example.emotionawareai.data.database.MoodCheckInDao
 import com.example.emotionawareai.data.model.MoodCheckInEntity
 import com.example.emotionawareai.domain.model.GrowthArea
@@ -57,7 +58,8 @@ class ChatViewModel @Inject constructor(
     private val audioToneAnalyzer: AudioToneAnalyzer,
     private val billingManager: BillingManager,
     private val moodCheckInDao: MoodCheckInDao,
-    private val insightsGenerator: InsightsGenerator
+    private val insightsGenerator: InsightsGenerator,
+    private val modelDownloader: ModelDownloader
 ) : ViewModel() {
 
     // ── UI State ─────────────────────────────────────────────────────────────
@@ -94,6 +96,18 @@ class ChatViewModel @Inject constructor(
 
     private val _modelInstallState = MutableStateFlow(ModelInstallState.IDLE)
     val modelInstallState: StateFlow<ModelInstallState> = _modelInstallState.asStateFlow()
+
+    /**
+     * Forwarded directly from [ModelDownloader] — `true` while the BitNet
+     * model file is being downloaded in the background.
+     */
+    val isModelDownloading: StateFlow<Boolean> = modelDownloader.isDownloading
+
+    /**
+     * Forwarded directly from [ModelDownloader] — download progress in
+     * `[0, 1]`, `-1f` when content-length is unknown, or `null` when idle.
+     */
+    val modelDownloadProgress: StateFlow<Float?> = modelDownloader.downloadProgress
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
@@ -276,11 +290,40 @@ class ChatViewModel @Inject constructor(
         checkDailyCheckInNeeded()
 
         viewModelScope.launch(Dispatchers.IO) {
-            _isModelAvailable.update { responseEngine.isModelFileAvailable() }
-            val loaded = responseEngine.loadModel()
-            _isModelLoaded.update { loaded }
-            updateAiActiveState()
-            Log.i(TAG, "Model available: ${_isModelAvailable.value}, loaded: $loaded")
+            // Load the model immediately if it is already on-disk (e.g. app was
+            // previously used, or Application.onCreate already finished the download
+            // before this ViewModel was created).
+            val available = responseEngine.isModelFileAvailable()
+            _isModelAvailable.update { available }
+            if (available) {
+                val loaded = responseEngine.loadModel()
+                _isModelLoaded.update { loaded }
+                updateAiActiveState()
+                Log.i(TAG, "Model available: $available, loaded: $loaded")
+            }
+        }
+
+        // Observe the ModelDownloader for download completion. The download was
+        // started by Application.onCreate() before this ViewModel existed, so by
+        // the time we reach here it may already be running or even complete.
+        viewModelScope.launch(Dispatchers.IO) {
+            modelDownloader.isDownloading.collect { downloading ->
+                if (!downloading) {
+                    val available = responseEngine.isModelFileAvailable()
+                    _isModelAvailable.update { available }
+                    if (available && !_isModelLoaded.value) {
+                        val loaded = responseEngine.loadModel()
+                        _isModelLoaded.update { loaded }
+                        updateAiActiveState()
+                        Log.i(TAG, "BitNet download finished — model loaded=$loaded")
+                    }
+                    if (!available && modelDownloader.downloadFailed.value) {
+                        _errorMessage.update {
+                            "BitNet model download failed. Check your internet connection and try again."
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -812,6 +855,21 @@ class ChatViewModel @Inject constructor(
     /** Resets [modelInstallState] back to [ModelInstallState.IDLE]. */
     fun dismissModelInstallState() {
         _modelInstallState.update { ModelInstallState.IDLE }
+    }
+
+    /**
+     * Manually triggers a BitNet model download (e.g. retry after failure or
+     * to replace an existing file). Delegates to [ModelDownloader.startDownload].
+     *
+     * If a download is already in progress this is a no-op.
+     */
+    fun downloadModel() {
+        modelDownloader.startDownload()
+    }
+
+    /** Cancels an in-progress BitNet model download. */
+    fun cancelModelDownload() {
+        modelDownloader.cancelDownload()
     }
 
     fun cancelGeneration() {

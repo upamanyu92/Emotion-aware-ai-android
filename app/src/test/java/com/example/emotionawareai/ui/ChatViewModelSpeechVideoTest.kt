@@ -7,6 +7,7 @@ import com.example.emotionawareai.domain.model.ActivityCaption
 import com.example.emotionawareai.billing.BillingManager
 import com.example.emotionawareai.engine.ActivityAnalyzer
 import com.example.emotionawareai.engine.EmotionDetector
+import com.example.emotionawareai.engine.ModelDownloader
 import com.example.emotionawareai.data.database.MoodCheckInDao
 import com.example.emotionawareai.manager.ConversationManager
 import com.example.emotionawareai.manager.InsightsGenerator
@@ -57,6 +58,7 @@ class ChatViewModelSpeechVideoTest {
     private lateinit var billingManager: BillingManager
     private lateinit var moodCheckInDao: MoodCheckInDao
     private lateinit var insightsGenerator: InsightsGenerator
+    private lateinit var modelDownloader: ModelDownloader
 
     private lateinit var viewModel: ChatViewModel
 
@@ -84,6 +86,7 @@ class ChatViewModelSpeechVideoTest {
         billingManager = mockk(relaxed = true)
         moodCheckInDao = mockk(relaxed = true)
         insightsGenerator = mockk(relaxed = true)
+        modelDownloader = mockk(relaxed = true)
 
         coEvery { insightsGenerator.getLatestInsight() } returns null
         every { insightsGenerator.observeInsights() } returns flowOf(emptyList())
@@ -111,6 +114,11 @@ class ChatViewModelSpeechVideoTest {
         coEvery { responseEngine.loadModel() } returns true
         every { responseEngine.isModelFileAvailable() } returns false
         every { responseEngine.modelFilePath() } returns "/data/user/0/com.example.emotionawareai/files/models/model.gguf"
+
+        // ModelDownloader state flows — idle by default so ViewModel init doesn't trigger load
+        every { modelDownloader.isDownloading } returns MutableStateFlow(false)
+        every { modelDownloader.downloadProgress } returns MutableStateFlow(null)
+        every { modelDownloader.downloadFailed } returns MutableStateFlow(false)
 
         coEvery { conversationManager.buildContext(any(), any(), any(), any()) } returns mockk(relaxed = true)
         every { responseEngine.generateResponse(any()) } returns flowOf("ok")
@@ -140,7 +148,8 @@ class ChatViewModelSpeechVideoTest {
             audioToneAnalyzer = audioToneAnalyzer,
             billingManager = billingManager,
             moodCheckInDao = moodCheckInDao,
-            insightsGenerator = insightsGenerator
+            insightsGenerator = insightsGenerator,
+            modelDownloader = modelDownloader
         )
     }
 

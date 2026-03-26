@@ -91,6 +91,8 @@ fun SettingsScreen(viewModel: ChatViewModel) {
     val isModelAvailable by viewModel.isModelAvailable.collectAsStateWithLifecycle()
     val isModelLoaded by viewModel.isModelLoaded.collectAsStateWithLifecycle()
     val modelInstallState by viewModel.modelInstallState.collectAsStateWithLifecycle()
+    val isModelDownloading by viewModel.isModelDownloading.collectAsStateWithLifecycle()
+    val modelDownloadProgress by viewModel.modelDownloadProgress.collectAsStateWithLifecycle()
     val activity = LocalContext.current as? Activity
     val context = LocalContext.current
 
@@ -112,6 +114,7 @@ fun SettingsScreen(viewModel: ChatViewModel) {
             viewModel.dismissModelInstallState()
         }
     }
+
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -194,22 +197,49 @@ fun SettingsScreen(viewModel: ChatViewModel) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = when {
-                                        isModelLoaded -> "Model loaded"
-                                        isModelAvailable -> "Model installed (not loaded)"
-                                        else -> "No model installed"
+                                        isModelLoaded -> "BitNet b1.58 loaded"
+                                        isModelDownloading -> "Downloading BitNet b1.58…"
+                                        isModelAvailable -> "BitNet b1.58 installed (not loaded)"
+                                        else -> "BitNet b1.58 not installed"
                                     },
                                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                                     color = if (isModelLoaded) NeonCyan else Color.White
                                 )
                                 Text(
                                     text = when {
-                                        isModelLoaded -> "On-device inference active"
+                                        isModelLoaded -> "On-device inference active (Microsoft 1-bit LLM)"
+                                        isModelDownloading -> {
+                                            val pct = modelDownloadProgress
+                                            if (pct != null && pct >= 0f) {
+                                                "%.0f%% — downloading Microsoft BitNet b1.58 (~500 MB)".format(pct * 100)
+                                            } else {
+                                                "Downloading Microsoft BitNet b1.58 (~500 MB)…"
+                                            }
+                                        }
                                         isModelAvailable -> viewModel.getModelFilePath()
-                                        else -> "Install a .gguf model file to enable on-device AI"
+                                        else -> "Microsoft BitNet b1.58 2B will be downloaded automatically (~500 MB)"
                                     },
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Color.White.copy(alpha = 0.6f)
                                 )
+                                if (isModelDownloading) {
+                                    Spacer(Modifier.height(6.dp))
+                                    val progress = modelDownloadProgress
+                                    if (progress != null && progress >= 0f) {
+                                        androidx.compose.material3.LinearProgressIndicator(
+                                            progress = { progress },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            color = NeonCyan,
+                                            trackColor = NeonPurple.copy(alpha = 0.2f)
+                                        )
+                                    } else {
+                                        androidx.compose.material3.LinearProgressIndicator(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            color = NeonCyan,
+                                            trackColor = NeonPurple.copy(alpha = 0.2f)
+                                        )
+                                    }
+                                }
                             }
                             if (isModelLoaded) {
                                 Icon(
@@ -221,12 +251,52 @@ fun SettingsScreen(viewModel: ChatViewModel) {
                             }
                         }
                         HorizontalDivider(color = GlassBorder)
+
+                        // Primary action: auto-download BitNet or cancel ongoing download
+                        if (!isModelAvailable || isModelDownloading) {
+                            Button(
+                                onClick = {
+                                    if (isModelDownloading) viewModel.cancelModelDownload()
+                                    else viewModel.downloadModel()
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isModelDownloading)
+                                        NeonRose.copy(alpha = 0.25f)
+                                    else
+                                        NeonCyan.copy(alpha = 0.20f)
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                if (isModelDownloading) {
+                                    CircularProgressIndicator(
+                                        color = NeonRose,
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(Modifier.size(8.dp))
+                                    Text("Cancel Download", color = NeonRose)
+                                } else {
+                                    Icon(
+                                        Icons.Filled.Psychology,
+                                        contentDescription = null,
+                                        tint = NeonCyan
+                                    )
+                                    Spacer(Modifier.size(8.dp))
+                                    Text("Download BitNet Model", color = NeonCyan)
+                                }
+                            }
+                        }
+
+                        // Secondary: manual file install (advanced users / custom models)
                         Button(
                             onClick = { modelFileLauncher.launch(arrayOf("*/*")) },
-                            enabled = modelInstallState != ModelInstallState.INSTALLING,
+                            enabled = modelInstallState != ModelInstallState.INSTALLING && !isModelDownloading,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                                .padding(horizontal = 14.dp, vertical = 4.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = NeonPurple.copy(alpha = 0.25f),
                                 disabledContainerColor = NeonPurple.copy(alpha = 0.10f)
@@ -261,7 +331,7 @@ fun SettingsScreen(viewModel: ChatViewModel) {
                                     )
                                     Spacer(Modifier.size(8.dp))
                                     Text(
-                                        if (isModelAvailable) "Replace model file" else "Load model file (.gguf)",
+                                        if (isModelAvailable) "Replace model file" else "Load from file (.gguf)",
                                         color = Color.White
                                     )
                                 }

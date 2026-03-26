@@ -10,15 +10,17 @@
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 
 // ---------------------------------------------------------------------------
-// Internal state – replace with llama_context* / llama_model* when integrating
-// llama.cpp. The pointers are stored as jlong handles passed back to Kotlin.
+// Internal state – replace with llama_model* / llama_context* when integrating
+// bitnet.cpp (Microsoft's 1-bit LLM runtime, a fork of llama.cpp).
+// The model file is the Microsoft BitNet b1.58 2B GGUF downloaded by
+// ModelDownloader.kt. Pointers are stored as jlong handles passed to Kotlin.
 // ---------------------------------------------------------------------------
 
 struct ModelState {
     std::string model_path;
     bool is_loaded = false;
-    // llama_model*   model   = nullptr;  // llama.cpp integration point
-    // llama_context* context = nullptr;  // llama.cpp integration point
+    // llama_model*   model   = nullptr;  // bitnet.cpp integration point
+    // llama_context* context = nullptr;  // bitnet.cpp integration point
 };
 
 // ---------------------------------------------------------------------------
@@ -44,13 +46,13 @@ Java_com_example_emotionawareai_engine_LLMEngine_nativeLoadModel(
     env->ReleaseStringUTFChars(model_path_jstr, model_path);
 
     // -----------------------------------------------------------------
-    // llama.cpp integration point:
+    // bitnet.cpp integration point:
     //
     // llama_model_params model_params = llama_model_default_params();
-    // model_params.n_gpu_layers = 0; // CPU-only for broad device support
+    // model_params.n_gpu_layers = 0; // CPU-only; BitNet uses optimised 1-bit kernels
     // state->model = llama_load_model_from_file(state->model_path.c_str(), model_params);
     // if (state->model == nullptr) {
-    //     LOGE("Failed to load llama model");
+    //     LOGE("Failed to load BitNet model");
     //     delete state;
     //     return 0L;
     // }
@@ -111,7 +113,7 @@ Java_com_example_emotionawareai_engine_LLMEngine_nativeGenerateResponse(
     }
 
     // -----------------------------------------------------------------
-    // llama.cpp integration point:
+    // bitnet.cpp integration point:
     //
     // std::vector<llama_token> tokens = llama_tokenize(state->model, prompt, true);
     // llama_eval(state->context, tokens.data(), (int)tokens.size(), 0, 4);
@@ -168,7 +170,7 @@ Java_com_example_emotionawareai_engine_LLMEngine_nativeReleaseModel(
     auto* state = reinterpret_cast<ModelState*>(handle);
 
     // -----------------------------------------------------------------
-    // llama.cpp integration point:
+    // bitnet.cpp integration point:
     //
     // if (state->context) { llama_free(state->context); state->context = nullptr; }
     // if (state->model)   { llama_free_model(state->model); state->model = nullptr; }
