@@ -196,7 +196,7 @@ class ModelDownloader @Inject constructor(
                         Log.d(TAG, "Following redirect to: $location")
                         conn.disconnect()
                         connection = null
-                        currentUrl = URL(location)
+                        currentUrl = URL(currentUrl, location)
                     } else if (code == HttpURLConnection.HTTP_OK) {
                         break
                     } else {
