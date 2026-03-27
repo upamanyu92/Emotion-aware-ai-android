@@ -138,8 +138,11 @@ android {
 // Assign a unique versionCode per ABI split so the Play Store can serve the
 // right APK to each device.  Multiplier keeps plenty of room for future
 // versionCode increments within each ABI bucket.
+// Also renames every APK output to: moodmitraAI-{buildType}-{abi-}{versionName}.apk
 val abiVersionCode = mapOf("arm64-v8a" to 2, "x86_64" to 1)
 android.applicationVariants.configureEach {
+    val buildTypeName = buildType.name          // "debug" or "release"
+    val fullVersion   = versionName             // includes versionNameSuffix, e.g. "1.0.0-alpha"
     outputs.configureEach {
         val output = this as? com.android.build.gradle.internal.api.ApkVariantOutputImpl
             ?: return@configureEach
@@ -148,6 +151,9 @@ android.applicationVariants.configureEach {
             output.versionCodeOverride =
                 (abiVersionCode[abi] ?: 0) * 1000 + android.defaultConfig.versionCode!!
         }
+        // Rename: moodmitraAI-{buildType}-{abi-}{versionName}.apk
+        val abiSuffix = if (abi != null) "-$abi" else ""
+        output.outputFileName = "moodmitraAI-$buildTypeName$abiSuffix-$fullVersion.apk"
     }
 }
 
