@@ -3,11 +3,49 @@
 #include <vector>
 #include <sstream>
 #include <android/log.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <cerrno>
+#include <cstring>
 
 #define LOG_TAG "LLMEngine"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
+
+// ---------------------------------------------------------------------------
+// Helper function to validate file existence and readability
+// ---------------------------------------------------------------------------
+static bool validateModelFile(const char* path) {
+    // Check if file exists
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        LOGE("Model file does not exist: %s (errno=%d, %s)", path, errno, strerror(errno));
+        return false;
+    }
+
+    // Check if it's a regular file
+    if (!S_ISREG(st.st_mode)) {
+        LOGE("Model path is not a regular file: %s", path);
+        return false;
+    }
+
+    // Check if file is readable
+    if (access(path, R_OK) != 0) {
+        LOGE("Model file is not readable: %s (errno=%d, %s)", path, errno, strerror(errno));
+        return false;
+    }
+
+    // Check file size is reasonable (should be > 1MB for a real model)
+    if (st.st_size < 1024 * 1024) {
+        LOGE("Model file is too small (%lld bytes): %s", (long long)st.st_size, path);
+        return false;
+    }
+
+    LOGI("Model file validation passed: %s (size=%lld bytes)", path, (long long)st.st_size);
+    return true;
+}
 
 // ---------------------------------------------------------------------------
 // Internal state – replace with llama_model* / llama_context* when integrating
@@ -40,6 +78,13 @@ Java_com_example_emotionawareai_engine_LLMEngine_nativeLoadModel(
     }
 
     LOGI("Loading model from: %s", model_path);
+
+    // Validate file exists and is readable before proceeding
+    if (!validateModelFile(model_path)) {
+        LOGE("Model file validation failed: %s", model_path);
+        env->ReleaseStringUTFChars(model_path_jstr, model_path);
+        return 0L;
+    }
 
     auto* state = new ModelState();
     state->model_path = std::string(model_path);
