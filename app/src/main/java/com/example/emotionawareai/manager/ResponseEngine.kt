@@ -2,6 +2,7 @@ package com.example.emotionawareai.manager
 
 import android.content.Context
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import com.example.emotionawareai.domain.model.ConversationContext
 import com.example.emotionawareai.engine.LLMEngine
@@ -30,6 +31,13 @@ class ResponseEngine @Inject constructor(
     private var ttsReady = false
     private var ttsEnabled = true
 
+    /** True while TTS is actively speaking the assistant response. */
+    @Volatile
+    private var _isTtsSpeaking = false
+
+    /** Returns true while TTS is actively speaking the assistant response. */
+    val isTtsSpeaking: Boolean get() = _isTtsSpeaking
+
     /**
      * Lazily initialises TextToSpeech on first use.
      */
@@ -39,6 +47,24 @@ class ResponseEngine @Inject constructor(
             ttsReady = status == TextToSpeech.SUCCESS
             if (ttsReady) {
                 tts?.language = Locale.getDefault()
+                tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) {
+                        _isTtsSpeaking = true
+                    }
+
+                    override fun onDone(utteranceId: String?) {
+                        _isTtsSpeaking = false
+                    }
+
+                    @Deprecated("Deprecated in Java")
+                    override fun onError(utteranceId: String?) {
+                        _isTtsSpeaking = false
+                    }
+
+                    override fun onStop(utteranceId: String?, interrupted: Boolean) {
+                        _isTtsSpeaking = false
+                    }
+                })
                 Log.i(TAG, "TextToSpeech initialized")
             } else {
                 Log.e(TAG, "TextToSpeech initialization failed (status=$status)")
@@ -76,10 +102,16 @@ class ResponseEngine @Inject constructor(
             Log.w(TAG, "TTS not ready — skipping speech")
             return
         }
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, UTTERANCE_ID)
+        _isTtsSpeaking = true
+        val result = tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, UTTERANCE_ID)
+        if (result == TextToSpeech.ERROR) {
+            _isTtsSpeaking = false
+            Log.w(TAG, "TTS speak() returned error — resetting isTtsSpeaking")
+        }
     }
 
     fun stopSpeaking() {
+        _isTtsSpeaking = false
         tts?.stop()
     }
 
