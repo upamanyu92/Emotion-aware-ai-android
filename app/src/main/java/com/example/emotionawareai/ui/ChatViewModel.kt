@@ -348,6 +348,8 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             voiceProcessor.recognizedTextFlow.collect { text ->
                 if (text.isNotBlank()) {
+                    // Stop any ongoing TTS so the AI doesn't hear its own response.
+                    responseEngine.stopSpeaking()
                     sendMessage(text, fromVoiceInput = true)
                 }
             }
@@ -918,8 +920,17 @@ class ChatViewModel @Inject constructor(
         if (!_isContinuousConversationEnabled.value) return
         if (!_audioPermissionGranted.value) return
 
-        // In continuous mode VoiceProcessor handles auto-restart internally, but after
-        // AI response generation we explicitly re-start to ensure the mic is live.
+        // Wait for TTS to finish speaking before restarting the microphone.
+        // Without this wait the recogniser would capture the AI's own TTS output
+        // and feed it back as a new user message, creating an infinite loop.
+        val ttsWaitStart = System.currentTimeMillis()
+        while (responseEngine.isTtsSpeaking &&
+            (System.currentTimeMillis() - ttsWaitStart) < TTS_MAX_WAIT_MS
+        ) {
+            delay(TTS_POLL_INTERVAL_MS)
+        }
+
+        // Small buffer after TTS ends to avoid clipping the end of speech.
         delay(300)
         if (!_isListening.value) {
             voiceProcessor.startContinuousListening()
@@ -1002,5 +1013,11 @@ class ChatViewModel @Inject constructor(
 
     companion object {
         private const val TAG = "ChatViewModel"
+
+        /** Maximum time to wait for TTS to finish before restarting the mic. */
+        private const val TTS_MAX_WAIT_MS = 15_000L
+
+        /** Polling interval while waiting for TTS to finish. */
+        private const val TTS_POLL_INTERVAL_MS = 100L
     }
 }
