@@ -1,7 +1,10 @@
 # syntax=docker/dockerfile:1
 # ---------------------------------------------------------------------------
 # Android build environment
-# JDK 17 + Android SDK (platform-34, build-tools-34.0.0, NDK 26.1, CMake 3.22.1)
+# JDK 17 + Android SDK (platform-35, build-tools-35.0.0, NDK 26.1, CMake 3.22.1)
+# Supports Android 11–15 natively (minSdk=30, targetSdk=35 / API 30–35).
+# Android 16 (API 36) devices run APKs built with targetSdk=35 via forward
+# compatibility, so all Android 11–16 devices are covered.
 #
 # Build image:
 #   docker build -t android-builder .
@@ -14,7 +17,7 @@ FROM eclipse-temurin:17-jdk-jammy
 ENV DEBIAN_FRONTEND=noninteractive
 ENV ANDROID_HOME=/opt/android-sdk
 ENV ANDROID_SDK_ROOT=/opt/android-sdk
-ENV PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${ANDROID_HOME}/build-tools/34.0.0:${PATH}"
+ENV PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${ANDROID_HOME}/build-tools/35.0.0:${PATH}"
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -40,8 +43,8 @@ RUN mkdir -p "${ANDROID_HOME}/cmdline-tools" && \
 RUN yes | sdkmanager --licenses > /dev/null 2>&1 && \
     sdkmanager \
         "platform-tools" \
-        "platforms;android-34" \
-        "build-tools;34.0.0" \
+        "platforms;android-35" \
+        "build-tools;35.0.0" \
         "ndk;26.1.10909125" \
         "cmake;3.22.1"
 
