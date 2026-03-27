@@ -9,6 +9,7 @@ plugins {
 android {
     namespace = "com.example.emotionawareai"
     compileSdk = 35
+    buildToolsVersion = "35.0.0"
 
     val keystoreFile = System.getenv("KEYSTORE_FILE")
     val keystorePassword = System.getenv("KEYSTORE_PASSWORD")
