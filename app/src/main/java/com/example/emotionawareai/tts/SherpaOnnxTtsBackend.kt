@@ -143,8 +143,9 @@ class SherpaOnnxTtsBackend @Inject constructor(
         )
         audioTrack = track
         isSpeaking = true
+        val frameCount = samples.size
         track.write(pcm, 0, pcm.size)
-        track.notificationMarkerPosition = samples.size
+        track.notificationMarkerPosition = frameCount
         track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
             override fun onMarkerReached(track: AudioTrack?) {
                 isSpeaking = false

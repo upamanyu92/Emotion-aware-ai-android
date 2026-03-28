@@ -2,6 +2,7 @@ package com.example.emotionawareai.tts
 
 import android.content.Context
 import android.util.Log
+import com.example.emotionawareai.BuildConfig
 import com.example.emotionawareai.domain.model.PiperVoice
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -176,7 +177,7 @@ class PiperVoiceManager @Inject constructor(
                     readTimeout = READ_TIMEOUT_MS
                     instanceFollowRedirects = false
                     requestMethod = "GET"
-                    setRequestProperty("User-Agent", USER_AGENT)
+                    setRequestProperty("User-Agent", "EmotionAwareAI/${BuildConfig.VERSION_NAME} (Android)")
                 }
                 connection = conn
                 conn.connect()
@@ -277,7 +278,6 @@ class PiperVoiceManager @Inject constructor(
         private const val READ_TIMEOUT_MS = 60_000
         private const val MAX_REDIRECTS = 5
         private const val BUFFER_SIZE = 16 * 1024
-        private const val USER_AGENT = "EmotionAwareAI/1.0 (Android)"
         private const val ESPEAK_ARCHIVE_NAME = "espeak-ng-data.tar.bz2"
         private const val ESPEAK_DOWNLOAD_URL =
             "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/espeak-ng-data.tar.bz2"

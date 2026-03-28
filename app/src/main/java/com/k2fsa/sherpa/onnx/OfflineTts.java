@@ -1,15 +1,17 @@
 package com.k2fsa.sherpa.onnx;
 
 public class OfflineTts {
+    private static final long NULL_PTR = 0L;
     static {
         System.loadLibrary("sherpa-onnx-jni");
     }
 
-    private long ptr = 0;
+    /** Native sherpa handle; {@link #NULL_PTR} means the engine is not allocated. */
+    private long ptr = NULL_PTR;
 
     public OfflineTts(OfflineTtsConfig config) {
         ptr = newFromFile(config);
-        if (ptr == 0) {
+        if (ptr == NULL_PTR) {
             throw new IllegalArgumentException("Invalid OfflineTtsConfig: failed to create native OfflineTts");
         }
     }
@@ -36,9 +38,9 @@ public class OfflineTts {
 
 
     public void release() {
-        if (ptr == 0) return;
+        if (ptr == NULL_PTR) return;
         delete(ptr);
-        ptr = 0;
+        ptr = NULL_PTR;
     }
 
     private native void delete(long ptr);

@@ -242,6 +242,8 @@ class ChatViewModel @Inject constructor(
 
     init {
         responseEngine.setTtsFallbackListener { message ->
+            // Surface neural-backend fallback in the existing error channel so the settings
+            // and chat UI can immediately explain why the system voice is speaking instead.
             _errorMessage.update { message }
         }
         viewModelScope.launch {
