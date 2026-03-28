@@ -24,6 +24,8 @@ kotlinxCoroutinesTest = "1.8.1"
 archCoreTesting = "2.2.0"
 billing = "7.1.1"
 playServicesAuth = "21.3.0"
+sherpaOnnx = "8.2.0"
+commonsCompress = "1.28.0"
 
 [libraries]
 # AndroidX Core
@@ -75,6 +77,11 @@ kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-cor
 # Payments
 play-billing = { group = "com.android.billingclient", name = "billing-ktx", version.ref = "billing" }
 play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "playServicesAuth" }
+
+
+# Neural TTS
+sherpa-onnx = { group = "com.bihe0832.android", name = "lib-sherpa-onnx", version.ref = "sherpaOnnx" }
+commons-compress = { group = "org.apache.commons", name = "commons-compress", version.ref = "commonsCompress" }
 
 # Testing
 junit = { group = "junit", name = "junit", version.ref = "junitVersion" }

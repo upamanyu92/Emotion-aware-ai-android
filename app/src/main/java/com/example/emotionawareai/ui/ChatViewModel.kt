@@ -11,6 +11,7 @@ import com.example.emotionawareai.domain.model.ActivityCaption
 import com.example.emotionawareai.domain.model.ChatMessage
 import com.example.emotionawareai.domain.model.Emotion
 import com.example.emotionawareai.domain.model.MessageRole
+import com.example.emotionawareai.domain.model.PiperVoice
 import com.example.emotionawareai.billing.BillingManager
 import com.example.emotionawareai.billing.PremiumOffer
 import com.example.emotionawareai.billing.PremiumPlanType
@@ -22,12 +23,14 @@ import com.example.emotionawareai.data.database.MoodCheckInDao
 import com.example.emotionawareai.data.model.MoodCheckInEntity
 import com.example.emotionawareai.domain.model.GrowthArea
 import com.example.emotionawareai.domain.model.SessionGoal
+import com.example.emotionawareai.domain.model.TtsBackend
 import com.example.emotionawareai.domain.model.TtsVoiceProfile
 import com.example.emotionawareai.domain.model.WeeklyInsight
 import com.example.emotionawareai.manager.ConversationManager
 import com.example.emotionawareai.manager.InsightsGenerator
 import com.example.emotionawareai.manager.MemoryManager
 import com.example.emotionawareai.manager.ResponseEngine
+import com.example.emotionawareai.tts.PiperVoiceManager
 import com.example.emotionawareai.voice.AudioToneAnalyzer
 import com.example.emotionawareai.voice.ToneInsight
 import com.example.emotionawareai.voice.VoiceError
@@ -48,6 +51,12 @@ import javax.inject.Inject
 /** Represents the lifecycle of an in-app model file installation. */
 enum class ModelInstallState { IDLE, INSTALLING, SUCCESS, ERROR }
 
+data class SpeechCaption(
+    val turnId: Long,
+    val speaker: MessageRole,
+    val text: String
+)
+
 @HiltViewModel
 class ChatViewModel @Inject constructor(
     private val conversationManager: ConversationManager,
@@ -60,7 +69,8 @@ class ChatViewModel @Inject constructor(
     private val billingManager: BillingManager,
     private val moodCheckInDao: MoodCheckInDao,
     private val insightsGenerator: InsightsGenerator,
-    private val modelDownloader: ModelDownloader
+    private val modelDownloader: ModelDownloader,
+    private val piperVoiceManager: PiperVoiceManager
 ) : ViewModel() {
 
     // ── UI State ─────────────────────────────────────────────────────────────
@@ -88,6 +98,12 @@ class ChatViewModel @Inject constructor(
 
     private val _isGenerating = MutableStateFlow(false)
     val isGenerating: StateFlow<Boolean> = _isGenerating.asStateFlow()
+
+    private val _isSpeaking = MutableStateFlow(false)
+    val isSpeaking: StateFlow<Boolean> = _isSpeaking.asStateFlow()
+
+    private val _speechCaption = MutableStateFlow<SpeechCaption?>(null)
+    val speechCaption: StateFlow<SpeechCaption?> = _speechCaption.asStateFlow()
 
     private val _isModelLoaded = MutableStateFlow(false)
     val isModelLoaded: StateFlow<Boolean> = _isModelLoaded.asStateFlow()
@@ -124,6 +140,19 @@ class ChatViewModel @Inject constructor(
 
     private val _ttsVoiceProfile = MutableStateFlow(TtsVoiceProfile.DEFAULT)
     val ttsVoiceProfile: StateFlow<TtsVoiceProfile> = _ttsVoiceProfile.asStateFlow()
+
+    private val _ttsBackend = MutableStateFlow(TtsBackend.SYSTEM)
+    val ttsBackend: StateFlow<TtsBackend> = _ttsBackend.asStateFlow()
+
+    private val _piperVoice = MutableStateFlow(PiperVoice.ALAN)
+    val piperVoice: StateFlow<PiperVoice> = _piperVoice.asStateFlow()
+
+    private val _isSelectedPiperVoiceInstalled = MutableStateFlow(false)
+    val isSelectedPiperVoiceInstalled: StateFlow<Boolean> =
+        _isSelectedPiperVoiceInstalled.asStateFlow()
+
+    val isPiperVoiceDownloading: StateFlow<Boolean> = piperVoiceManager.isDownloading
+    val piperVoiceDownloadProgress: StateFlow<Float?> = piperVoiceManager.downloadProgress
 
     private val _isContinuousConversationEnabled = MutableStateFlow(true)
     val isContinuousConversationEnabled: StateFlow<Boolean> =
@@ -194,6 +223,7 @@ class ChatViewModel @Inject constructor(
 
     private var generationJob: Job? = null
     private var messageIdCounter = 0L
+    private var speechCaptionTurnId = 0L
 
     // ── Growth / insights / check-in state ───────────────────────────────────
 
@@ -224,6 +254,11 @@ class ChatViewModel @Inject constructor(
     // ── Initialisation ────────────────────────────────────────────────────────
 
     init {
+        responseEngine.setTtsFallbackListener { fallbackMessage ->
+            // Surface neural-backend fallback in the existing error channel so the settings
+            // and chat UI can immediately explain why the system voice is speaking instead.
+            _errorMessage.update { fallbackMessage }
+        }
         viewModelScope.launch {
             initializeSession()
             observeEmotionDetection()
@@ -231,6 +266,8 @@ class ChatViewModel @Inject constructor(
             observeVoiceRecognition()
             observeAudioToneSignals()
             observeBillingState()
+            observeSpeakingState()
+            observePiperVoiceDownloads()
         }
     }
 
@@ -247,6 +284,18 @@ class ChatViewModel @Inject constructor(
         val profile = memoryManager.getTtsVoiceProfile()
         _ttsVoiceProfile.update { profile }
         responseEngine.setVoiceProfile(profile)
+
+        val backend = memoryManager.getTtsBackend()
+        _ttsBackend.update { backend }
+        responseEngine.setTtsBackend(backend)
+
+        val piperVoice = memoryManager.getPiperVoice()
+        _piperVoice.update { piperVoice }
+        responseEngine.setPiperVoice(piperVoice)
+        refreshPiperVoiceInstallState()
+        if (backend == TtsBackend.SHERPA_PIPER && !_isSelectedPiperVoiceInstalled.value) {
+            piperVoiceManager.startDownloadIfAbsent(piperVoice)
+        }
 
         // Load the persisted continuous conversation preference; default is true (live mode).
         val continuousEnabled = memoryManager.isContinuousConversationEnabled()
@@ -398,6 +447,15 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    private fun observeSpeakingState() {
+        viewModelScope.launch {
+            responseEngine.isSpeaking.collect { speaking ->
+                _isSpeaking.update { speaking }
+                updateAiActiveState()
+            }
+        }
+    }
+
     private fun observeBillingState() {
         viewModelScope.launch {
             billingManager.isBillingReady.collect { ready ->
@@ -450,6 +508,12 @@ class ChatViewModel @Inject constructor(
 
         Log.i(TAG, "sendMessage: fromVoice=$fromVoiceInput, emotion=${_effectiveEmotion.value}, length=${text.trim().length}")
 
+        updateSpeechCaption(
+            speaker = MessageRole.USER,
+            text = text.trim(),
+            newTurn = true
+        )
+
         val userMessage = ChatMessage(
             id = ++messageIdCounter,
             content = text.trim(),
@@ -484,6 +548,7 @@ class ChatViewModel @Inject constructor(
             _messages.update { it + streamingMessage }
 
             val fullResponse = StringBuilder()
+            var isFirstAssistantCaption = true
 
             responseEngine.generateResponse(context)
                 .catch { e ->
@@ -492,6 +557,12 @@ class ChatViewModel @Inject constructor(
                 }
                 .collect { token ->
                     fullResponse.append(token)
+                    updateSpeechCaption(
+                        speaker = MessageRole.ASSISTANT,
+                        text = fullResponse.toString(),
+                        newTurn = isFirstAssistantCaption
+                    )
+                    isFirstAssistantCaption = false
                     _messages.update { list ->
                         list.map { msg ->
                             if (msg.id == streamingMessage.id) {
@@ -510,6 +581,14 @@ class ChatViewModel @Inject constructor(
                 list.map { msg ->
                     if (msg.id == streamingMessage.id) finalMessage else msg
                 }
+            }
+
+            if (finalMessage.content.isNotBlank() && isFirstAssistantCaption) {
+                updateSpeechCaption(
+                    speaker = MessageRole.ASSISTANT,
+                    text = finalMessage.content,
+                    newTurn = true
+                )
             }
 
             Log.i(TAG, "Generation complete: responseLength=${finalMessage.content.length}")
@@ -552,6 +631,38 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             memoryManager.setTtsVoiceProfile(profile)
         }
+    }
+
+    fun setTtsBackend(backend: TtsBackend) {
+        _ttsBackend.update { backend }
+        responseEngine.setTtsBackend(backend)
+        if (backend == TtsBackend.SHERPA_PIPER) {
+            piperVoiceManager.startDownloadIfAbsent(_piperVoice.value)
+        }
+        refreshPiperVoiceInstallState()
+        viewModelScope.launch {
+            memoryManager.setTtsBackend(backend)
+        }
+    }
+
+    fun setPiperVoice(voice: PiperVoice) {
+        _piperVoice.update { voice }
+        responseEngine.setPiperVoice(voice)
+        refreshPiperVoiceInstallState()
+        if (_ttsBackend.value == TtsBackend.SHERPA_PIPER && !_isSelectedPiperVoiceInstalled.value) {
+            piperVoiceManager.startDownloadIfAbsent(voice)
+        }
+        viewModelScope.launch {
+            memoryManager.setPiperVoice(voice)
+        }
+    }
+
+    fun downloadSelectedPiperVoice() {
+        piperVoiceManager.startDownload(_piperVoice.value)
+    }
+
+    fun cancelPiperVoiceDownload() {
+        piperVoiceManager.cancelDownload()
     }
 
     fun toggleCamera() {
@@ -875,6 +986,25 @@ class ChatViewModel @Inject constructor(
         _modelInstallState.update { ModelInstallState.IDLE }
     }
 
+    private fun refreshPiperVoiceInstallState() {
+        _isSelectedPiperVoiceInstalled.update { piperVoiceManager.isVoiceInstalled(_piperVoice.value) }
+    }
+
+    private fun observePiperVoiceDownloads() {
+        viewModelScope.launch {
+            piperVoiceManager.isDownloading.collect { downloading ->
+                if (!downloading) {
+                    refreshPiperVoiceInstallState()
+                    if (_ttsBackend.value == TtsBackend.SHERPA_PIPER && !_isSelectedPiperVoiceInstalled.value &&
+                        piperVoiceManager.downloadFailed.value
+                    ) {
+                        _errorMessage.update { "Failed to download Piper voice package" }
+                    }
+                }
+            }
+        }
+    }
+
     /**
      * Manually triggers a BitNet model download (e.g. retry after failure or
      * to replace an existing file). Delegates to [ModelDownloader.startDownload].
@@ -931,6 +1061,26 @@ class ChatViewModel @Inject constructor(
         _errorMessage.update { message }
     }
 
+    private fun updateSpeechCaption(
+        speaker: MessageRole,
+        text: String,
+        newTurn: Boolean
+    ) {
+        if (text.isBlank()) return
+        val turnId = if (newTurn || _speechCaption.value == null) {
+            ++speechCaptionTurnId
+        } else {
+            _speechCaption.value?.turnId ?: ++speechCaptionTurnId
+        }
+        _speechCaption.update {
+            SpeechCaption(
+                turnId = turnId,
+                speaker = speaker,
+                text = text
+            )
+        }
+    }
+
     private suspend fun maybeResumeContinuousConversation(fromVoiceInput: Boolean) {
         if (!fromVoiceInput) return
         if (!_isContinuousConversationEnabled.value) return
@@ -965,7 +1115,7 @@ class ChatViewModel @Inject constructor(
 
     private fun updateAiActiveState() {
         _isAiAgentActive.update {
-            _isModelLoaded.value || _cameraPermissionGranted.value || _isListening.value
+            _isModelLoaded.value || _cameraPermissionGranted.value || _isListening.value || _isSpeaking.value
         }
     }
 

@@ -43,5 +43,9 @@ data class UserPreferenceEntity(
         const val KEY_LAST_CHECKIN_DATE = "last_checkin_date"
         /** Selected TTS voice profile name (matches TtsVoiceProfile enum name). */
         const val KEY_TTS_VOICE_PROFILE = "tts_voice_profile"
+        /** Active speech synthesis backend. */
+        const val KEY_TTS_BACKEND = "tts_backend"
+        /** Selected Piper neural voice name. */
+        const val KEY_PIPER_VOICE = "piper_voice"
     }
 }

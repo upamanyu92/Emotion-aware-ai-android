@@ -19,6 +19,9 @@ import com.example.emotionawareai.manager.ConversationManager
 import com.example.emotionawareai.manager.InsightsGenerator
 import com.example.emotionawareai.manager.MemoryManager
 import com.example.emotionawareai.manager.ResponseEngine
+import com.example.emotionawareai.tts.PiperVoiceManager
+import com.example.emotionawareai.tts.SherpaOnnxTtsBackend
+import com.example.emotionawareai.tts.SystemTtsBackend
 import com.example.emotionawareai.voice.VoiceProcessor
 import dagger.Module
 import dagger.Provides
@@ -115,9 +118,10 @@ object AppModule {
     @Provides
     @Singleton
     fun provideResponseEngine(
-        @ApplicationContext context: Context,
-        llmEngine: LLMEngine
-    ): ResponseEngine = ResponseEngine(context, llmEngine)
+        llmEngine: LLMEngine,
+        systemTtsBackend: SystemTtsBackend,
+        sherpaOnnxTtsBackend: SherpaOnnxTtsBackend
+    ): ResponseEngine = ResponseEngine(llmEngine, systemTtsBackend, sherpaOnnxTtsBackend)
 
     @Provides
     @Singleton

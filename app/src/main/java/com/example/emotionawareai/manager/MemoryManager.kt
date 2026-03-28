@@ -8,6 +8,8 @@ import com.example.emotionawareai.domain.model.ChatMessage
 import com.example.emotionawareai.domain.model.Emotion
 import com.example.emotionawareai.domain.model.GrowthArea
 import com.example.emotionawareai.domain.model.SessionGoal
+import com.example.emotionawareai.domain.model.PiperVoice
+import com.example.emotionawareai.domain.model.TtsBackend
 import com.example.emotionawareai.domain.model.TtsVoiceProfile
 import com.example.emotionawareai.domain.repository.ConversationRepository
 import kotlinx.coroutines.Dispatchers
@@ -107,6 +109,26 @@ class MemoryManager @Inject constructor(
     suspend fun setTtsVoiceProfile(profile: TtsVoiceProfile) {
         Log.i(TAG, "setTtsVoiceProfile: ${profile.name}")
         savePreference(UserPreferenceEntity.KEY_TTS_VOICE_PROFILE, profile.name)
+    }
+
+    suspend fun getTtsBackend(): TtsBackend =
+        TtsBackend.fromName(
+            getPreference(UserPreferenceEntity.KEY_TTS_BACKEND, TtsBackend.SYSTEM.name)
+        )
+
+    suspend fun setTtsBackend(backend: TtsBackend) {
+        Log.i(TAG, "setTtsBackend: ${backend.name}")
+        savePreference(UserPreferenceEntity.KEY_TTS_BACKEND, backend.name)
+    }
+
+    suspend fun getPiperVoice(): PiperVoice =
+        PiperVoice.fromName(
+            getPreference(UserPreferenceEntity.KEY_PIPER_VOICE, PiperVoice.ALAN.name)
+        )
+
+    suspend fun setPiperVoice(voice: PiperVoice) {
+        Log.i(TAG, "setPiperVoice: ${voice.name}")
+        savePreference(UserPreferenceEntity.KEY_PIPER_VOICE, voice.name)
     }
 
     suspend fun setCameraEnabled(enabled: Boolean) {
