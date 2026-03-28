@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -62,9 +63,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.emotionawareai.ui.ChatViewModel
 import com.example.emotionawareai.ui.ModelInstallState
+import com.example.emotionawareai.domain.model.TtsVoiceProfile
 import com.example.emotionawareai.ui.theme.GlassBorder
 import com.example.emotionawareai.ui.theme.GlassCard
 import com.example.emotionawareai.ui.theme.GradEnd
@@ -79,6 +82,7 @@ import com.example.emotionawareai.ui.theme.NeonRose
 @Composable
 fun SettingsScreen(viewModel: ChatViewModel) {
     val isTtsEnabled by viewModel.isTtsEnabled.collectAsStateWithLifecycle()
+    val ttsVoiceProfile by viewModel.ttsVoiceProfile.collectAsStateWithLifecycle()
     val isCameraEnabled by viewModel.isCameraEnabled.collectAsStateWithLifecycle()
     val isCaptionsEnabled by viewModel.isCaptionsEnabled.collectAsStateWithLifecycle()
     val isContinuousConversationEnabled by viewModel.isContinuousConversationEnabled.collectAsStateWithLifecycle()
@@ -350,6 +354,13 @@ fun SettingsScreen(viewModel: ChatViewModel) {
                             checked = isTtsEnabled,
                             onToggle = { viewModel.toggleTts() }
                         )
+                        if (isTtsEnabled) {
+                            HorizontalDivider(color = GlassBorder)
+                            TtsVoiceProfileSelector(
+                                selected = ttsVoiceProfile,
+                                onSelect = { viewModel.setTtsVoiceProfile(it) }
+                            )
+                        }
                         HorizontalDivider(color = GlassBorder)
                         SettingsToggleRow(
                             title = "Continuous voice mode",
@@ -574,5 +585,57 @@ private fun SettingsToggleRow(
                 uncheckedTrackColor = Color.White.copy(alpha = 0.1f)
             )
         )
+    }
+}
+
+/** Horizontal chip-row that lets the user pick a [TtsVoiceProfile]. */
+@Composable
+private fun TtsVoiceProfileSelector(
+    selected: TtsVoiceProfile,
+    onSelect: (TtsVoiceProfile) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+    ) {
+        Text(
+            "Voice style",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White.copy(alpha = 0.6f),
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            TtsVoiceProfile.entries.forEach { profile ->
+                val isSelected = profile == selected
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .border(
+                            width = 1.dp,
+                            color = if (isSelected) NeonCyan else GlassBorder,
+                            shape = RoundedCornerShape(20.dp)
+                        )
+                        .background(
+                            color = if (isSelected) NeonCyan.copy(alpha = 0.15f)
+                                    else Color.Transparent,
+                            shape = RoundedCornerShape(20.dp)
+                        )
+                        .clickable { onSelect(profile) }
+                        .padding(vertical = 6.dp)
+                ) {
+                    Text(
+                        text = profile.displayName,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        color = if (isSelected) NeonCyan else Color.White.copy(alpha = 0.7f),
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                    )
+                }
+            }
+        }
     }
 }

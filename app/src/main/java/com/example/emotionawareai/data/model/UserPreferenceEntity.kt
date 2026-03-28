@@ -41,5 +41,7 @@ data class UserPreferenceEntity(
         const val KEY_ONBOARDING_COMPLETE = "onboarding_complete"
         /** Whether the daily check-in sheet has been shown today (ISO date string). */
         const val KEY_LAST_CHECKIN_DATE = "last_checkin_date"
+        /** Selected TTS voice profile name (matches TtsVoiceProfile enum name). */
+        const val KEY_TTS_VOICE_PROFILE = "tts_voice_profile"
     }
 }

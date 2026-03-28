@@ -22,6 +22,7 @@ import com.example.emotionawareai.data.database.MoodCheckInDao
 import com.example.emotionawareai.data.model.MoodCheckInEntity
 import com.example.emotionawareai.domain.model.GrowthArea
 import com.example.emotionawareai.domain.model.SessionGoal
+import com.example.emotionawareai.domain.model.TtsVoiceProfile
 import com.example.emotionawareai.domain.model.WeeklyInsight
 import com.example.emotionawareai.manager.ConversationManager
 import com.example.emotionawareai.manager.InsightsGenerator
@@ -120,6 +121,9 @@ class ChatViewModel @Inject constructor(
 
     private val _isTtsEnabled = MutableStateFlow(true)
     val isTtsEnabled: StateFlow<Boolean> = _isTtsEnabled.asStateFlow()
+
+    private val _ttsVoiceProfile = MutableStateFlow(TtsVoiceProfile.DEFAULT)
+    val ttsVoiceProfile: StateFlow<TtsVoiceProfile> = _ttsVoiceProfile.asStateFlow()
 
     private val _isContinuousConversationEnabled = MutableStateFlow(true)
     val isContinuousConversationEnabled: StateFlow<Boolean> =
@@ -239,6 +243,10 @@ class ChatViewModel @Inject constructor(
 
         _isTtsEnabled.update { memoryManager.isTtsEnabled() }
         responseEngine.setTtsEnabled(_isTtsEnabled.value)
+
+        val profile = memoryManager.getTtsVoiceProfile()
+        _ttsVoiceProfile.update { profile }
+        responseEngine.setVoiceProfile(profile)
 
         // Load the persisted continuous conversation preference; default is true (live mode).
         val continuousEnabled = memoryManager.isContinuousConversationEnabled()
@@ -535,6 +543,14 @@ class ChatViewModel @Inject constructor(
         responseEngine.setTtsEnabled(newState)
         viewModelScope.launch {
             memoryManager.setTtsEnabled(newState)
+        }
+    }
+
+    fun setTtsVoiceProfile(profile: TtsVoiceProfile) {
+        _ttsVoiceProfile.update { profile }
+        responseEngine.setVoiceProfile(profile)
+        viewModelScope.launch {
+            memoryManager.setTtsVoiceProfile(profile)
         }
     }
 
