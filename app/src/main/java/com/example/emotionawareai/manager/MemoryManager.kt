@@ -8,6 +8,7 @@ import com.example.emotionawareai.domain.model.ChatMessage
 import com.example.emotionawareai.domain.model.Emotion
 import com.example.emotionawareai.domain.model.GrowthArea
 import com.example.emotionawareai.domain.model.SessionGoal
+import com.example.emotionawareai.domain.model.TtsVoiceProfile
 import com.example.emotionawareai.domain.repository.ConversationRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -96,6 +97,16 @@ class MemoryManager @Inject constructor(
     suspend fun setTtsEnabled(enabled: Boolean) {
         Log.i(TAG, "setTtsEnabled: $enabled")
         savePreference(UserPreferenceEntity.KEY_TTS_ENABLED, enabled.toString())
+    }
+
+    suspend fun getTtsVoiceProfile(): TtsVoiceProfile =
+        TtsVoiceProfile.fromName(
+            getPreference(UserPreferenceEntity.KEY_TTS_VOICE_PROFILE, TtsVoiceProfile.DEFAULT.name)
+        )
+
+    suspend fun setTtsVoiceProfile(profile: TtsVoiceProfile) {
+        Log.i(TAG, "setTtsVoiceProfile: ${profile.name}")
+        savePreference(UserPreferenceEntity.KEY_TTS_VOICE_PROFILE, profile.name)
     }
 
     suspend fun setCameraEnabled(enabled: Boolean) {

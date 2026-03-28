@@ -5,6 +5,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import com.example.emotionawareai.domain.model.ConversationContext
+import com.example.emotionawareai.domain.model.TtsVoiceProfile
 import com.example.emotionawareai.engine.LLMEngine
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -30,6 +31,7 @@ class ResponseEngine @Inject constructor(
     private var tts: TextToSpeech? = null
     private var ttsReady = false
     private var ttsEnabled = true
+    private var voiceProfile: TtsVoiceProfile = TtsVoiceProfile.DEFAULT
 
     /** True while TTS is actively speaking the assistant response. */
     @Volatile
@@ -65,11 +67,52 @@ class ResponseEngine @Inject constructor(
                         _isTtsSpeaking = false
                     }
                 })
+                applyVoiceProfile(voiceProfile)
                 Log.i(TAG, "TextToSpeech initialized")
             } else {
                 Log.e(TAG, "TextToSpeech initialization failed (status=$status)")
             }
         }
+    }
+
+    /**
+     * Applies pitch, speech-rate, and a best-effort voice selection for [profile].
+     *
+     * Voice selection tries to find an available voice whose name contains the
+     * profile's [TtsVoiceProfile.genderHint]. Falls back gracefully when no
+     * matching voice is found so pitch/rate adjustments always take effect.
+     */
+    private fun applyVoiceProfile(profile: TtsVoiceProfile) {
+        val engine = tts ?: return
+        if (!ttsReady) return
+
+        engine.setPitch(profile.pitch)
+        engine.setSpeechRate(profile.speechRate)
+
+        val hint = profile.genderHint
+        if (hint != null) {
+            val locale = Locale.getDefault()
+            val match = engine.voices
+                ?.filter { v -> !v.isNetworkConnectionRequired && v.locale.language == locale.language }
+                ?.firstOrNull { v -> v.name.contains(hint, ignoreCase = true) }
+            if (match != null) {
+                engine.voice = match
+                Log.i(TAG, "Voice set to ${match.name} for profile ${profile.name}")
+            } else {
+                Log.d(TAG, "No local voice matched hint '$hint'; pitch/rate will differentiate")
+            }
+        }
+        Log.i(TAG, "Voice profile applied: ${profile.name} (pitch=${profile.pitch}, rate=${profile.speechRate})")
+    }
+
+    /**
+     * Switches the active voice profile. If TTS is already initialized the new
+     * profile is applied immediately; otherwise it is stored for use on first
+     * [ensureTts] call.
+     */
+    fun setVoiceProfile(profile: TtsVoiceProfile) {
+        voiceProfile = profile
+        applyVoiceProfile(profile)
     }
 
     /**
