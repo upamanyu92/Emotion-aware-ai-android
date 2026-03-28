@@ -55,6 +55,8 @@ import com.example.emotionawareai.ui.theme.NeonCyan
 import com.example.emotionawareai.ui.theme.NeonPurple
 import com.example.emotionawareai.ui.theme.NeonRose
 
+private const val ASSISTANT_DISPLAY_NAME = "Ash"
+
 private enum class AgentVisualState(
     val title: String,
     val subtitle: String,
@@ -264,7 +266,7 @@ fun AgentPresenceAnimation(
                             text = if (currentCaption.speaker == MessageRole.USER) {
                                 userName.ifBlank { "You" }
                             } else {
-                                "Ash"
+                                ASSISTANT_DISPLAY_NAME
                             },
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                             color = if (currentCaption.speaker == MessageRole.USER) NeonCyan else NeonRose

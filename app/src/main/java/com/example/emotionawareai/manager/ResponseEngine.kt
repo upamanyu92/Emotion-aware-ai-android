@@ -105,7 +105,7 @@ class ResponseEngine @Inject constructor(
         }
 
         if (backend !== systemTtsBackend) {
-            val fallbackMessage = "Neural voice unavailable — using Android system TTS instead."
+            val fallbackMessage = "Neural voice unavailable - using Android system TTS instead."
             Log.w(TAG, fallbackMessage)
             ttsFallbackListener?.invoke(fallbackMessage)
             systemTtsBackend.setVoiceProfile(voiceProfile)
