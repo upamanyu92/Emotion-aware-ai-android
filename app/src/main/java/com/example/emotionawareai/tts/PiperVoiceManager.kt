@@ -233,7 +233,11 @@ class PiperVoiceManager @Inject constructor(
                 TarArchiveInputStream(bzIn).use { tarIn ->
                     var entry = tarIn.nextTarEntry
                     while (entry != null) {
-                        val target = File(destinationDir, entry.name).canonicalFile
+                        val target = try {
+                            File(destinationDir, entry.name).canonicalFile
+                        } catch (e: Exception) {
+                            throw SecurityException("Failed to canonicalize archive path: ${entry.name}", e)
+                        }
                         if (!target.toPath().startsWith(destinationPath)) {
                             throw SecurityException("Blocked unsafe archive path: ${entry.name}")
                         }

@@ -34,10 +34,6 @@ public class OfflineTts {
         return generateImpl(ptr, text, sid, speed);
     }
 
-    @Override
-    protected void finalize() throws Throwable {
-        release();
-    }
 
     public void release() {
         if (ptr == 0) return;

@@ -18,6 +18,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
@@ -51,7 +52,7 @@ class SherpaOnnxTtsBackend @Inject constructor(
     override fun setPiperVoice(voice: PiperVoice) {
         if (selectedVoice == voice) return
         selectedVoice = voice
-        scope.launch {
+        runBlocking {
             engineMutex.withLock {
                 offlineTts?.release()
                 offlineTts = null
@@ -91,7 +92,7 @@ class SherpaOnnxTtsBackend @Inject constructor(
 
     override fun release() {
         stop()
-        scope.launch {
+        runBlocking {
             engineMutex.withLock {
                 offlineTts?.release()
                 offlineTts = null

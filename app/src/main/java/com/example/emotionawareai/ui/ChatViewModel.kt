@@ -241,6 +241,9 @@ class ChatViewModel @Inject constructor(
     // ── Initialisation ────────────────────────────────────────────────────────
 
     init {
+        responseEngine.setTtsFallbackListener { message ->
+            _errorMessage.update { message }
+        }
         viewModelScope.launch {
             initializeSession()
             observeEmotionDetection()

@@ -33,6 +33,7 @@ class ResponseEngine @Inject constructor(
     private var voiceProfile: TtsVoiceProfile = TtsVoiceProfile.DEFAULT
     private var ttsBackend: TtsBackend = TtsBackend.SYSTEM
     private var piperVoice: PiperVoice = PiperVoice.ALAN
+    private var ttsFallbackListener: ((String) -> Unit)? = null
 
     /** Returns true while any TTS backend is actively speaking the response. */
     val isTtsSpeaking: Boolean
@@ -52,6 +53,10 @@ class ResponseEngine @Inject constructor(
     fun setPiperVoice(voice: PiperVoice) {
         piperVoice = voice
         sherpaOnnxTtsBackend.setPiperVoice(voice)
+    }
+
+    fun setTtsFallbackListener(listener: ((String) -> Unit)?) {
+        ttsFallbackListener = listener
     }
 
     /**
@@ -80,7 +85,9 @@ class ResponseEngine @Inject constructor(
         val backend = activeBackend()
         val success = backend.speak(text)
         if (!success && backend !== systemTtsBackend) {
-            Log.w(TAG, "Neural TTS unavailable; falling back to Android TextToSpeech")
+            val fallbackMessage = "Neural voice unavailable — using Android system TTS instead."
+            Log.w(TAG, fallbackMessage)
+            ttsFallbackListener?.invoke(fallbackMessage)
             systemTtsBackend.setVoiceProfile(voiceProfile)
             systemTtsBackend.speak(text)
         }
