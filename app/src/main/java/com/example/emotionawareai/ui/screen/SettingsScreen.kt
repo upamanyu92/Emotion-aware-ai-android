@@ -67,6 +67,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.emotionawareai.ui.ChatViewModel
 import com.example.emotionawareai.ui.ModelInstallState
+import com.example.emotionawareai.domain.model.PiperVoice
+import com.example.emotionawareai.domain.model.TtsBackend
 import com.example.emotionawareai.domain.model.TtsVoiceProfile
 import com.example.emotionawareai.ui.theme.GlassBorder
 import com.example.emotionawareai.ui.theme.GlassCard
@@ -83,6 +85,11 @@ import com.example.emotionawareai.ui.theme.NeonRose
 fun SettingsScreen(viewModel: ChatViewModel) {
     val isTtsEnabled by viewModel.isTtsEnabled.collectAsStateWithLifecycle()
     val ttsVoiceProfile by viewModel.ttsVoiceProfile.collectAsStateWithLifecycle()
+    val ttsBackend by viewModel.ttsBackend.collectAsStateWithLifecycle()
+    val piperVoice by viewModel.piperVoice.collectAsStateWithLifecycle()
+    val isSelectedPiperVoiceInstalled by viewModel.isSelectedPiperVoiceInstalled.collectAsStateWithLifecycle()
+    val isPiperVoiceDownloading by viewModel.isPiperVoiceDownloading.collectAsStateWithLifecycle()
+    val piperVoiceDownloadProgress by viewModel.piperVoiceDownloadProgress.collectAsStateWithLifecycle()
     val isCameraEnabled by viewModel.isCameraEnabled.collectAsStateWithLifecycle()
     val isCaptionsEnabled by viewModel.isCaptionsEnabled.collectAsStateWithLifecycle()
     val isContinuousConversationEnabled by viewModel.isContinuousConversationEnabled.collectAsStateWithLifecycle()
@@ -356,10 +363,31 @@ fun SettingsScreen(viewModel: ChatViewModel) {
                         )
                         if (isTtsEnabled) {
                             HorizontalDivider(color = GlassBorder)
-                            TtsVoiceProfileSelector(
-                                selected = ttsVoiceProfile,
-                                onSelect = { viewModel.setTtsVoiceProfile(it) }
+                            TtsBackendSelector(
+                                selected = ttsBackend,
+                                onSelect = { viewModel.setTtsBackend(it) }
                             )
+                            HorizontalDivider(color = GlassBorder)
+                            if (ttsBackend == TtsBackend.SYSTEM) {
+                                TtsVoiceProfileSelector(
+                                    selected = ttsVoiceProfile,
+                                    onSelect = { viewModel.setTtsVoiceProfile(it) }
+                                )
+                            } else {
+                                PiperVoiceSelector(
+                                    selected = piperVoice,
+                                    onSelect = { viewModel.setPiperVoice(it) }
+                                )
+                                HorizontalDivider(color = GlassBorder)
+                                PiperVoiceStatusCard(
+                                    selectedVoice = piperVoice,
+                                    isInstalled = isSelectedPiperVoiceInstalled,
+                                    isDownloading = isPiperVoiceDownloading,
+                                    progress = piperVoiceDownloadProgress,
+                                    onDownload = { viewModel.downloadSelectedPiperVoice() },
+                                    onCancel = { viewModel.cancelPiperVoiceDownload() }
+                                )
+                            }
                         }
                         HorizontalDivider(color = GlassBorder)
                         SettingsToggleRow(
@@ -637,5 +665,196 @@ private fun TtsVoiceProfileSelector(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun TtsBackendSelector(
+    selected: TtsBackend,
+    onSelect: (TtsBackend) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+    ) {
+        Text(
+            "Speech engine",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White.copy(alpha = 0.6f),
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            TtsBackend.entries.forEach { backend ->
+                val isSelected = backend == selected
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .border(
+                            width = 1.dp,
+                            color = if (isSelected) NeonCyan else GlassBorder,
+                            shape = RoundedCornerShape(20.dp)
+                        )
+                        .background(
+                            color = if (isSelected) NeonCyan.copy(alpha = 0.15f) else Color.Transparent,
+                            shape = RoundedCornerShape(20.dp)
+                        )
+                        .clickable { onSelect(backend) }
+                        .padding(vertical = 8.dp, horizontal = 8.dp)
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            backend.displayName,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isSelected) NeonCyan else Color.White.copy(alpha = 0.8f),
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                        )
+                        Text(
+                            backend.subtitle,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            color = Color.White.copy(alpha = 0.5f)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PiperVoiceSelector(
+    selected: PiperVoice,
+    onSelect: (PiperVoice) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+    ) {
+        Text(
+            "Neural voice",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White.copy(alpha = 0.6f),
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        PiperVoice.entries.forEachIndexed { index, voice ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { onSelect(voice) }
+                    .background(if (voice == selected) NeonCyan.copy(alpha = 0.12f) else Color.Transparent)
+                    .border(
+                        width = 1.dp,
+                        color = if (voice == selected) NeonCyan.copy(alpha = 0.6f) else GlassBorder,
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(voice.displayName, color = Color.White, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "${voice.localeLabel} · ${voice.description}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+                }
+                if (voice == selected) {
+                    Icon(
+                        Icons.Filled.CheckCircle,
+                        contentDescription = null,
+                        tint = NeonCyan,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+            if (index != PiperVoice.entries.lastIndex) {
+                Spacer(Modifier.height(8.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun PiperVoiceStatusCard(
+    selectedVoice: PiperVoice,
+    isInstalled: Boolean,
+    isDownloading: Boolean,
+    progress: Float?,
+    onDownload: () -> Unit,
+    onCancel: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+    ) {
+        Text(
+            text = when {
+                isInstalled -> "${selectedVoice.displayName} is ready for fully offline neural speech"
+                isDownloading -> "Downloading ${selectedVoice.displayName} voice package…"
+                else -> "Download ${selectedVoice.displayName} once to enable Sherpa-ONNX + Piper"
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White.copy(alpha = 0.8f)
+        )
+        if (isDownloading) {
+            Spacer(Modifier.height(10.dp))
+            if (progress != null && progress >= 0f) {
+                androidx.compose.material3.LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = NeonCyan,
+                    trackColor = NeonPurple.copy(alpha = 0.2f)
+                )
+            } else {
+                androidx.compose.material3.LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = NeonCyan,
+                    trackColor = NeonPurple.copy(alpha = 0.2f)
+                )
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Button(
+            onClick = { if (isDownloading) onCancel() else onDownload() },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (isDownloading) NeonRose.copy(alpha = 0.25f) else NeonPurple.copy(alpha = 0.25f)
+            ),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            if (isDownloading) {
+                CircularProgressIndicator(
+                    color = NeonRose,
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp
+                )
+                Spacer(Modifier.size(8.dp))
+                Text("Cancel voice download", color = NeonRose)
+            } else {
+                Icon(
+                    if (isInstalled) Icons.Filled.CheckCircle else Icons.Filled.FolderOpen,
+                    contentDescription = null,
+                    tint = if (isInstalled) NeonCyan else Color.White
+                )
+                Spacer(Modifier.size(8.dp))
+                Text(
+                    if (isInstalled) "Re-download voice package" else "Download voice package",
+                    color = if (isInstalled) NeonCyan else Color.White
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Downloads model + shared espeak-ng data into app-private storage. System TTS remains the automatic fallback.",
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White.copy(alpha = 0.5f)
+        )
     }
 }

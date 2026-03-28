@@ -205,6 +205,10 @@ dependencies {
     implementation(libs.play.billing)
     implementation(libs.play.services.auth)
 
+    // Neural TTS
+    implementation(libs.sherpa.onnx)
+    implementation(libs.commons.compress)
+
     // Testing
     testImplementation(libs.junit)
     testImplementation(libs.mockk)

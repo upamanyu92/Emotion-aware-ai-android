@@ -3,6 +3,8 @@ package com.example.emotionawareai.ui
 import android.graphics.Bitmap
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule
 import com.example.emotionawareai.domain.model.Emotion
+import com.example.emotionawareai.domain.model.PiperVoice
+import com.example.emotionawareai.domain.model.TtsBackend
 import com.example.emotionawareai.domain.model.ActivityCaption
 import com.example.emotionawareai.billing.BillingManager
 import com.example.emotionawareai.engine.ActivityAnalyzer
@@ -13,6 +15,7 @@ import com.example.emotionawareai.manager.ConversationManager
 import com.example.emotionawareai.manager.InsightsGenerator
 import com.example.emotionawareai.manager.MemoryManager
 import com.example.emotionawareai.manager.ResponseEngine
+import com.example.emotionawareai.tts.PiperVoiceManager
 import com.example.emotionawareai.voice.VoiceError
 import com.example.emotionawareai.voice.AudioToneAnalyzer
 import com.example.emotionawareai.voice.VoiceProcessor
@@ -59,6 +62,7 @@ class ChatViewModelSpeechVideoTest {
     private lateinit var moodCheckInDao: MoodCheckInDao
     private lateinit var insightsGenerator: InsightsGenerator
     private lateinit var modelDownloader: ModelDownloader
+    private lateinit var piperVoiceManager: PiperVoiceManager
 
     private lateinit var viewModel: ChatViewModel
 
@@ -87,6 +91,7 @@ class ChatViewModelSpeechVideoTest {
         moodCheckInDao = mockk(relaxed = true)
         insightsGenerator = mockk(relaxed = true)
         modelDownloader = mockk(relaxed = true)
+        piperVoiceManager = mockk(relaxed = true)
 
         coEvery { insightsGenerator.getLatestInsight() } returns null
         every { insightsGenerator.observeInsights() } returns flowOf(emptyList())
@@ -95,6 +100,8 @@ class ChatViewModelSpeechVideoTest {
         coEvery { conversationManager.getActiveConversationId() } returns 1L
         coEvery { memoryManager.getRecentContext(any(), any()) } returns emptyList()
         coEvery { memoryManager.isTtsEnabled() } returns true
+        coEvery { memoryManager.getTtsBackend() } returns TtsBackend.SYSTEM
+        coEvery { memoryManager.getPiperVoice() } returns PiperVoice.ALAN
         // Default is now true (live mode enabled by default)
         coEvery { memoryManager.isContinuousConversationEnabled() } returns true
         coEvery { memoryManager.isPremiumUnlocked() } returns true
@@ -119,6 +126,10 @@ class ChatViewModelSpeechVideoTest {
         every { modelDownloader.isDownloading } returns MutableStateFlow(false)
         every { modelDownloader.downloadProgress } returns MutableStateFlow(null)
         every { modelDownloader.downloadFailed } returns MutableStateFlow(false)
+        every { piperVoiceManager.isDownloading } returns MutableStateFlow(false)
+        every { piperVoiceManager.downloadProgress } returns MutableStateFlow(null)
+        every { piperVoiceManager.downloadFailed } returns MutableStateFlow(false)
+        every { piperVoiceManager.isVoiceInstalled(any()) } returns false
 
         coEvery { conversationManager.buildContext(any(), any(), any(), any()) } returns mockk(relaxed = true)
         every { responseEngine.generateResponse(any()) } returns flowOf("ok")
@@ -149,7 +160,8 @@ class ChatViewModelSpeechVideoTest {
             billingManager = billingManager,
             moodCheckInDao = moodCheckInDao,
             insightsGenerator = insightsGenerator,
-            modelDownloader = modelDownloader
+            modelDownloader = modelDownloader,
+            piperVoiceManager = piperVoiceManager
         )
     }
 
@@ -279,6 +291,30 @@ class ChatViewModelSpeechVideoTest {
             "buildContext (index $buildIdx) must be called before saveMessage (index $saveIdx)",
             buildIdx >= 0 && saveIdx > buildIdx
         )
+    }
+
+
+    @Test
+    fun `setTtsBackend persists choice and triggers Piper download when needed`() = runTest {
+        advanceUntilIdle()
+
+        viewModel.setTtsBackend(TtsBackend.SHERPA_PIPER)
+        advanceUntilIdle()
+
+        verify(exactly = 1) { responseEngine.setTtsBackend(TtsBackend.SHERPA_PIPER) }
+        verify(exactly = 1) { piperVoiceManager.startDownloadIfAbsent(PiperVoice.ALAN) }
+        coVerify { memoryManager.setTtsBackend(TtsBackend.SHERPA_PIPER) }
+    }
+
+    @Test
+    fun `setPiperVoice persists voice and refreshes response engine`() = runTest {
+        advanceUntilIdle()
+
+        viewModel.setPiperVoice(PiperVoice.AMY)
+        advanceUntilIdle()
+
+        verify(exactly = 1) { responseEngine.setPiperVoice(PiperVoice.AMY) }
+        coVerify { memoryManager.setPiperVoice(PiperVoice.AMY) }
     }
 
     @Test

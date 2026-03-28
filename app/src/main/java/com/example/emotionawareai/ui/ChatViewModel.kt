@@ -11,6 +11,7 @@ import com.example.emotionawareai.domain.model.ActivityCaption
 import com.example.emotionawareai.domain.model.ChatMessage
 import com.example.emotionawareai.domain.model.Emotion
 import com.example.emotionawareai.domain.model.MessageRole
+import com.example.emotionawareai.domain.model.PiperVoice
 import com.example.emotionawareai.billing.BillingManager
 import com.example.emotionawareai.billing.PremiumOffer
 import com.example.emotionawareai.billing.PremiumPlanType
@@ -22,12 +23,14 @@ import com.example.emotionawareai.data.database.MoodCheckInDao
 import com.example.emotionawareai.data.model.MoodCheckInEntity
 import com.example.emotionawareai.domain.model.GrowthArea
 import com.example.emotionawareai.domain.model.SessionGoal
+import com.example.emotionawareai.domain.model.TtsBackend
 import com.example.emotionawareai.domain.model.TtsVoiceProfile
 import com.example.emotionawareai.domain.model.WeeklyInsight
 import com.example.emotionawareai.manager.ConversationManager
 import com.example.emotionawareai.manager.InsightsGenerator
 import com.example.emotionawareai.manager.MemoryManager
 import com.example.emotionawareai.manager.ResponseEngine
+import com.example.emotionawareai.tts.PiperVoiceManager
 import com.example.emotionawareai.voice.AudioToneAnalyzer
 import com.example.emotionawareai.voice.ToneInsight
 import com.example.emotionawareai.voice.VoiceError
@@ -60,7 +63,8 @@ class ChatViewModel @Inject constructor(
     private val billingManager: BillingManager,
     private val moodCheckInDao: MoodCheckInDao,
     private val insightsGenerator: InsightsGenerator,
-    private val modelDownloader: ModelDownloader
+    private val modelDownloader: ModelDownloader,
+    private val piperVoiceManager: PiperVoiceManager
 ) : ViewModel() {
 
     // ── UI State ─────────────────────────────────────────────────────────────
@@ -124,6 +128,19 @@ class ChatViewModel @Inject constructor(
 
     private val _ttsVoiceProfile = MutableStateFlow(TtsVoiceProfile.DEFAULT)
     val ttsVoiceProfile: StateFlow<TtsVoiceProfile> = _ttsVoiceProfile.asStateFlow()
+
+    private val _ttsBackend = MutableStateFlow(TtsBackend.SYSTEM)
+    val ttsBackend: StateFlow<TtsBackend> = _ttsBackend.asStateFlow()
+
+    private val _piperVoice = MutableStateFlow(PiperVoice.ALAN)
+    val piperVoice: StateFlow<PiperVoice> = _piperVoice.asStateFlow()
+
+    private val _isSelectedPiperVoiceInstalled = MutableStateFlow(false)
+    val isSelectedPiperVoiceInstalled: StateFlow<Boolean> =
+        _isSelectedPiperVoiceInstalled.asStateFlow()
+
+    val isPiperVoiceDownloading: StateFlow<Boolean> = piperVoiceManager.isDownloading
+    val piperVoiceDownloadProgress: StateFlow<Float?> = piperVoiceManager.downloadProgress
 
     private val _isContinuousConversationEnabled = MutableStateFlow(true)
     val isContinuousConversationEnabled: StateFlow<Boolean> =
@@ -231,6 +248,7 @@ class ChatViewModel @Inject constructor(
             observeVoiceRecognition()
             observeAudioToneSignals()
             observeBillingState()
+            observePiperVoiceDownloads()
         }
     }
 
@@ -247,6 +265,18 @@ class ChatViewModel @Inject constructor(
         val profile = memoryManager.getTtsVoiceProfile()
         _ttsVoiceProfile.update { profile }
         responseEngine.setVoiceProfile(profile)
+
+        val backend = memoryManager.getTtsBackend()
+        _ttsBackend.update { backend }
+        responseEngine.setTtsBackend(backend)
+
+        val piperVoice = memoryManager.getPiperVoice()
+        _piperVoice.update { piperVoice }
+        responseEngine.setPiperVoice(piperVoice)
+        refreshPiperVoiceInstallState()
+        if (backend == TtsBackend.SHERPA_PIPER && !_isSelectedPiperVoiceInstalled.value) {
+            piperVoiceManager.startDownloadIfAbsent(piperVoice)
+        }
 
         // Load the persisted continuous conversation preference; default is true (live mode).
         val continuousEnabled = memoryManager.isContinuousConversationEnabled()
@@ -552,6 +582,38 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             memoryManager.setTtsVoiceProfile(profile)
         }
+    }
+
+    fun setTtsBackend(backend: TtsBackend) {
+        _ttsBackend.update { backend }
+        responseEngine.setTtsBackend(backend)
+        if (backend == TtsBackend.SHERPA_PIPER) {
+            piperVoiceManager.startDownloadIfAbsent(_piperVoice.value)
+        }
+        refreshPiperVoiceInstallState()
+        viewModelScope.launch {
+            memoryManager.setTtsBackend(backend)
+        }
+    }
+
+    fun setPiperVoice(voice: PiperVoice) {
+        _piperVoice.update { voice }
+        responseEngine.setPiperVoice(voice)
+        refreshPiperVoiceInstallState()
+        if (_ttsBackend.value == TtsBackend.SHERPA_PIPER && !_isSelectedPiperVoiceInstalled.value) {
+            piperVoiceManager.startDownloadIfAbsent(voice)
+        }
+        viewModelScope.launch {
+            memoryManager.setPiperVoice(voice)
+        }
+    }
+
+    fun downloadSelectedPiperVoice() {
+        piperVoiceManager.startDownload(_piperVoice.value)
+    }
+
+    fun cancelPiperVoiceDownload() {
+        piperVoiceManager.cancelDownload()
     }
 
     fun toggleCamera() {
@@ -873,6 +935,25 @@ class ChatViewModel @Inject constructor(
     /** Resets [modelInstallState] back to [ModelInstallState.IDLE]. */
     fun dismissModelInstallState() {
         _modelInstallState.update { ModelInstallState.IDLE }
+    }
+
+    private fun refreshPiperVoiceInstallState() {
+        _isSelectedPiperVoiceInstalled.update { piperVoiceManager.isVoiceInstalled(_piperVoice.value) }
+    }
+
+    private fun observePiperVoiceDownloads() {
+        viewModelScope.launch {
+            piperVoiceManager.isDownloading.collect { downloading ->
+                if (!downloading) {
+                    refreshPiperVoiceInstallState()
+                    if (_ttsBackend.value == TtsBackend.SHERPA_PIPER && !_isSelectedPiperVoiceInstalled.value &&
+                        piperVoiceManager.downloadFailed.value
+                    ) {
+                        _errorMessage.update { "Failed to download Piper voice package" }
+                    }
+                }
+            }
+        }
     }
 
     /**

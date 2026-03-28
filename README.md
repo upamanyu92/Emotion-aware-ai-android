@@ -1,6 +1,6 @@
 # Emotion-Aware AI Android
 
-An offline, emotion-aware AI conversational assistant for Android. The app uses on-device LLM inference (llama.cpp via JNI), MediaPipe facial emotion detection, Android SpeechRecognizer for voice input, and TextToSpeech for spoken responses — all running fully on-device with no cloud dependency.
+An offline, emotion-aware AI conversational assistant for Android. The app uses on-device LLM inference (llama.cpp via JNI), MediaPipe facial emotion detection, Android SpeechRecognizer for voice input, and fully local spoken responses with Android TextToSpeech plus an optional Sherpa-ONNX + Piper neural voice path — all running fully on-device with no cloud dependency.
 
 ---
 
@@ -70,6 +70,28 @@ Or use Android Studio → **Run ▶** to build and launch directly.
 # HTML reports are written to:
 # app/build/reports/tests/
 ```
+
+---
+
+## Neural TTS (Sherpa-ONNX + Piper)
+
+The app now supports two on-device speech backends from **Settings → Conversation**:
+
+- **System** — Android `TextToSpeech` with existing pitch/rate voice styles
+- **Neural** — Sherpa-ONNX + Piper voice packages stored in app-private storage
+
+How it works:
+
+1. Enable **Voice output (TTS)**
+2. Switch **Speech engine** to **Neural**
+3. Pick a curated Piper voice (Alan or Amy)
+4. Download the voice package once from settings
+
+Implementation notes:
+
+- Piper downloads are stored under the app-private `files/tts/piper/` directory
+- The downloader fetches both the selected Piper voice archive and the shared `espeak-ng-data` package
+- If the neural voice is missing or fails to initialize, the app automatically falls back to Android system TTS so spoken responses keep working
 
 ---
 

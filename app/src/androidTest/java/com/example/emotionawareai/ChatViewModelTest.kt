@@ -3,6 +3,8 @@ package com.example.emotionawareai
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule
 import com.example.emotionawareai.billing.BillingManager
 import com.example.emotionawareai.domain.model.Emotion
+import com.example.emotionawareai.domain.model.PiperVoice
+import com.example.emotionawareai.domain.model.TtsBackend
 import com.example.emotionawareai.domain.model.ActivityCaption
 import com.example.emotionawareai.domain.model.MessageRole
 import com.example.emotionawareai.engine.ActivityAnalyzer
@@ -10,6 +12,7 @@ import com.example.emotionawareai.engine.EmotionDetector
 import com.example.emotionawareai.manager.ConversationManager
 import com.example.emotionawareai.manager.MemoryManager
 import com.example.emotionawareai.manager.ResponseEngine
+import com.example.emotionawareai.tts.PiperVoiceManager
 import com.example.emotionawareai.ui.ChatViewModel
 import com.example.emotionawareai.voice.AudioToneAnalyzer
 import com.example.emotionawareai.voice.VoiceProcessor
@@ -78,6 +81,8 @@ class ChatViewModelTest {
         coEvery { conversationManager.getActiveConversationId() } returns 1L
         coEvery { memoryManager.getRecentContext(any(), any()) } returns emptyList()
         coEvery { memoryManager.isTtsEnabled() } returns true
+        coEvery { memoryManager.getTtsBackend() } returns TtsBackend.SYSTEM
+        coEvery { memoryManager.getPiperVoice() } returns PiperVoice.ALAN
         coEvery { memoryManager.isContinuousConversationEnabled() } returns false
         coEvery { memoryManager.isPremiumUnlocked() } returns false
         coEvery { memoryManager.isProThemeEnabled() } returns false
