@@ -114,7 +114,7 @@ class LLMEngine @Inject constructor(
             // would call the callback per-token and we'd emit inside the lambda.
             // Restructure to Flow<String> emission here once llama.cpp is wired in.
             val nativeResponse = tokenBuffer.toString()
-            if (nativeResponse.normalizedForComparison() == NATIVE_PLACEHOLDER_RESPONSE.normalizedForComparison()) {
+            if (nativeResponse.normalizedForComparison() == NORMALIZED_NATIVE_PLACEHOLDER_RESPONSE) {
                 Log.w(TAG, "Native runtime returned placeholder output; using Kotlin stub response instead")
                 emit(generateStubResponse(prompt))
             } else {
@@ -135,7 +135,7 @@ class LLMEngine @Inject constructor(
         val emotionHint = extractEmotionHint(prompt)
         val userMessage = extractUserMessage(prompt).ifBlank { "hello" }
         val pool = STUB_RESPONSE_POOLS[emotionHint] ?: STUB_RESPONSE_POOLS["NEUTRAL"]!!
-        val turnOffset = stubResponseCounter.getAndIncrement() and 0x7FFFFFFF
+        val turnOffset = stubResponseCounter.getAndIncrement()
         val mixedSeed = (userMessage.lowercase().hashCode() + turnOffset) and 0x7FFFFFFF
         val index = mixedSeed % pool.size
         return pool[index]
@@ -195,6 +195,8 @@ class LLMEngine @Inject constructor(
         const val DEFAULT_MODEL_FILE = "model.gguf"
         private const val NATIVE_PLACEHOLDER_RESPONSE =
             "I understand how you're feeling. I'm here to listen and help you. Tell me more about what's on your mind."
+        private val NORMALIZED_NATIVE_PLACEHOLDER_RESPONSE =
+            NATIVE_PLACEHOLDER_RESPONSE.trim().replace(Regex("\\s+"), " ")
 
         /**
          * Emotion-keyed pools of stub responses. Each pool must have at least 5

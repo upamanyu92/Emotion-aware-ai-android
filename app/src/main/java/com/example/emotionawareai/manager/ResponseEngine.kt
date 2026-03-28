@@ -72,7 +72,6 @@ class ResponseEngine @Inject constructor(
 
     suspend fun isPiperVoiceReady(voice: PiperVoice = piperVoice): Boolean =
         withContext(Dispatchers.IO) {
-            sherpaOnnxTtsBackend.setPiperVoice(voice)
             sherpaOnnxTtsBackend.validateVoice(voice)
         }
 

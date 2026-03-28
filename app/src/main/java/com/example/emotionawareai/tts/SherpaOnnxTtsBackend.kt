@@ -21,6 +21,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -43,6 +44,8 @@ class SherpaOnnxTtsBackend @Inject constructor(
     @Volatile
     private var offlineTts: OfflineTts? = null
 
+    private val validationState = AtomicReference<ValidationState?>(null)
+
     @Volatile
     override var isSpeaking: Boolean = false
         private set
@@ -52,6 +55,7 @@ class SherpaOnnxTtsBackend @Inject constructor(
     override fun setPiperVoice(voice: PiperVoice) {
         if (selectedVoice == voice) return
         selectedVoice = voice
+        validationState.set(null)
         runBlocking {
             engineMutex.withLock {
                 offlineTts?.release()
@@ -60,13 +64,17 @@ class SherpaOnnxTtsBackend @Inject constructor(
         }
     }
 
-    override fun isReady(): Boolean = runBlocking { validateVoice(selectedVoice) }
+    override fun isReady(): Boolean = validationState.get() == ValidationState(selectedVoice, true)
 
-    suspend fun validateVoice(voice: PiperVoice = selectedVoice): Boolean =
-        getOrCreateEngine(voice) != null
+    suspend fun validateVoice(voice: PiperVoice = selectedVoice): Boolean {
+        val ready = getOrCreateEngine(voice) != null
+        validationState.set(ValidationState(voice, ready))
+        return ready
+    }
 
     override fun speak(text: String): Boolean {
         if (text.isBlank()) return false
+        if (!isReady()) return false
         synthesisJob?.cancel()
         stopTrack()
         val voice = selectedVoice
@@ -125,8 +133,6 @@ class SherpaOnnxTtsBackend @Inject constructor(
                 createEngine(installed).also { offlineTts = it }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to initialize neural TTS for ${voice.name}", e)
-                offlineTts?.release()
-                offlineTts = null
                 null
             }
         }
@@ -195,4 +201,9 @@ class SherpaOnnxTtsBackend @Inject constructor(
     companion object {
         private const val TAG = "SherpaOnnxTtsBackend"
     }
+
+    private data class ValidationState(
+        val voice: PiperVoice,
+        val ready: Boolean
+    )
 }
