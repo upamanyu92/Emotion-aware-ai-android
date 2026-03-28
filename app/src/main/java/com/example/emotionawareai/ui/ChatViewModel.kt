@@ -51,6 +51,12 @@ import javax.inject.Inject
 /** Represents the lifecycle of an in-app model file installation. */
 enum class ModelInstallState { IDLE, INSTALLING, SUCCESS, ERROR }
 
+data class SpeechCaption(
+    val turnId: Long,
+    val speaker: MessageRole,
+    val text: String
+)
+
 @HiltViewModel
 class ChatViewModel @Inject constructor(
     private val conversationManager: ConversationManager,
@@ -92,6 +98,12 @@ class ChatViewModel @Inject constructor(
 
     private val _isGenerating = MutableStateFlow(false)
     val isGenerating: StateFlow<Boolean> = _isGenerating.asStateFlow()
+
+    private val _isSpeaking = MutableStateFlow(false)
+    val isSpeaking: StateFlow<Boolean> = _isSpeaking.asStateFlow()
+
+    private val _speechCaption = MutableStateFlow<SpeechCaption?>(null)
+    val speechCaption: StateFlow<SpeechCaption?> = _speechCaption.asStateFlow()
 
     private val _isModelLoaded = MutableStateFlow(false)
     val isModelLoaded: StateFlow<Boolean> = _isModelLoaded.asStateFlow()
@@ -211,6 +223,7 @@ class ChatViewModel @Inject constructor(
 
     private var generationJob: Job? = null
     private var messageIdCounter = 0L
+    private var speechCaptionTurnId = 0L
 
     // ── Growth / insights / check-in state ───────────────────────────────────
 
@@ -253,6 +266,7 @@ class ChatViewModel @Inject constructor(
             observeVoiceRecognition()
             observeAudioToneSignals()
             observeBillingState()
+            observeSpeakingState()
             observePiperVoiceDownloads()
         }
     }
@@ -433,6 +447,15 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    private fun observeSpeakingState() {
+        viewModelScope.launch {
+            responseEngine.isSpeaking.collect { speaking ->
+                _isSpeaking.update { speaking }
+                updateAiActiveState()
+            }
+        }
+    }
+
     private fun observeBillingState() {
         viewModelScope.launch {
             billingManager.isBillingReady.collect { ready ->
@@ -485,6 +508,12 @@ class ChatViewModel @Inject constructor(
 
         Log.i(TAG, "sendMessage: fromVoice=$fromVoiceInput, emotion=${_effectiveEmotion.value}, length=${text.trim().length}")
 
+        updateSpeechCaption(
+            speaker = MessageRole.USER,
+            text = text.trim(),
+            newTurn = true
+        )
+
         val userMessage = ChatMessage(
             id = ++messageIdCounter,
             content = text.trim(),
@@ -519,6 +548,7 @@ class ChatViewModel @Inject constructor(
             _messages.update { it + streamingMessage }
 
             val fullResponse = StringBuilder()
+            var isFirstAssistantCaption = true
 
             responseEngine.generateResponse(context)
                 .catch { e ->
@@ -527,6 +557,12 @@ class ChatViewModel @Inject constructor(
                 }
                 .collect { token ->
                     fullResponse.append(token)
+                    updateSpeechCaption(
+                        speaker = MessageRole.ASSISTANT,
+                        text = fullResponse.toString(),
+                        newTurn = isFirstAssistantCaption
+                    )
+                    isFirstAssistantCaption = false
                     _messages.update { list ->
                         list.map { msg ->
                             if (msg.id == streamingMessage.id) {
@@ -545,6 +581,14 @@ class ChatViewModel @Inject constructor(
                 list.map { msg ->
                     if (msg.id == streamingMessage.id) finalMessage else msg
                 }
+            }
+
+            if (finalMessage.content.isNotBlank() && isFirstAssistantCaption) {
+                updateSpeechCaption(
+                    speaker = MessageRole.ASSISTANT,
+                    text = finalMessage.content,
+                    newTurn = true
+                )
             }
 
             Log.i(TAG, "Generation complete: responseLength=${finalMessage.content.length}")
@@ -1017,6 +1061,26 @@ class ChatViewModel @Inject constructor(
         _errorMessage.update { message }
     }
 
+    private fun updateSpeechCaption(
+        speaker: MessageRole,
+        text: String,
+        newTurn: Boolean
+    ) {
+        if (text.isBlank()) return
+        val turnId = if (newTurn || _speechCaption.value == null) {
+            ++speechCaptionTurnId
+        } else {
+            _speechCaption.value?.turnId ?: ++speechCaptionTurnId
+        }
+        _speechCaption.update {
+            SpeechCaption(
+                turnId = turnId,
+                speaker = speaker,
+                text = text
+            )
+        }
+    }
+
     private suspend fun maybeResumeContinuousConversation(fromVoiceInput: Boolean) {
         if (!fromVoiceInput) return
         if (!_isContinuousConversationEnabled.value) return
@@ -1051,7 +1115,7 @@ class ChatViewModel @Inject constructor(
 
     private fun updateAiActiveState() {
         _isAiAgentActive.update {
-            _isModelLoaded.value || _cameraPermissionGranted.value || _isListening.value
+            _isModelLoaded.value || _cameraPermissionGranted.value || _isListening.value || _isSpeaking.value
         }
     }
 

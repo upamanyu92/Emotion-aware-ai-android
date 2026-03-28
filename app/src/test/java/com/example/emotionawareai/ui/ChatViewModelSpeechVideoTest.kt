@@ -75,6 +75,7 @@ class ChatViewModelSpeechVideoTest {
     private val audioEmotionFlow = MutableSharedFlow<Emotion>(replay = 1)
     private val toneInsightFlow = MutableSharedFlow<com.example.emotionawareai.voice.ToneInsight>(replay = 1)
     private val billingOffersFlow = MutableStateFlow(emptyList<com.example.emotionawareai.billing.PremiumOffer>())
+    private val responseSpeakingFlow = MutableStateFlow(false)
 
     @Before
     fun setUp() {
@@ -119,6 +120,7 @@ class ChatViewModelSpeechVideoTest {
         coEvery { memoryManager.getLastCheckInDate() } returns ""
         every { memoryManager.observeActiveGoals() } returns flowOf(emptyList())
         coEvery { responseEngine.loadModel() } returns true
+        every { responseEngine.isSpeaking } returns responseSpeakingFlow
         every { responseEngine.isModelFileAvailable() } returns false
         every { responseEngine.modelFilePath() } returns "/data/user/0/com.example.emotionawareai/files/models/model.gguf"
 
@@ -293,6 +295,32 @@ class ChatViewModelSpeechVideoTest {
         )
     }
 
+
+
+    @Test
+    fun `response engine speaking flow updates isSpeaking state`() = runTest {
+        advanceUntilIdle()
+
+        responseSpeakingFlow.value = true
+        advanceUntilIdle()
+        assertTrue(viewModel.isSpeaking.value)
+
+        responseSpeakingFlow.value = false
+        advanceUntilIdle()
+        assertFalse(viewModel.isSpeaking.value)
+    }
+
+    @Test
+    fun `sendMessage publishes assistant speech caption`() = runTest {
+        advanceUntilIdle()
+
+        viewModel.sendMessage("hello there")
+        advanceUntilIdle()
+
+        val caption = viewModel.speechCaption.value
+        assertEquals(com.example.emotionawareai.domain.model.MessageRole.ASSISTANT, caption?.speaker)
+        assertEquals("ok", caption?.text)
+    }
 
     @Test
     fun `setTtsBackend persists choice and triggers Piper download when needed`() = runTest {

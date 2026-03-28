@@ -9,10 +9,19 @@ import com.example.emotionawareai.engine.LLMEngine
 import com.example.emotionawareai.tts.AssistantTtsBackend
 import com.example.emotionawareai.tts.SherpaOnnxTtsBackend
 import com.example.emotionawareai.tts.SystemTtsBackend
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -29,11 +38,17 @@ class ResponseEngine @Inject constructor(
     private val systemTtsBackend: SystemTtsBackend,
     private val sherpaOnnxTtsBackend: SherpaOnnxTtsBackend
 ) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var ttsMonitorJob: Job? = null
+
     private var ttsEnabled = true
     private var voiceProfile: TtsVoiceProfile = TtsVoiceProfile.DEFAULT
     private var ttsBackend: TtsBackend = TtsBackend.SYSTEM
     private var piperVoice: PiperVoice = PiperVoice.ALAN
     private var ttsFallbackListener: ((String) -> Unit)? = null
+
+    private val _isSpeaking = MutableStateFlow(false)
+    val isSpeaking: StateFlow<Boolean> = _isSpeaking.asStateFlow()
 
     /** Returns true while any TTS backend is actively speaking the response. */
     val isTtsSpeaking: Boolean
@@ -84,16 +99,26 @@ class ResponseEngine @Inject constructor(
         if (!ttsEnabled || text.isBlank()) return
         val backend = activeBackend()
         val success = backend.speak(text)
-        if (!success && backend !== systemTtsBackend) {
+        if (success) {
+            startSpeakingMonitor(backend)
+            return
+        }
+
+        if (backend !== systemTtsBackend) {
             val fallbackMessage = "Neural voice unavailable — using Android system TTS instead."
             Log.w(TAG, fallbackMessage)
             ttsFallbackListener?.invoke(fallbackMessage)
             systemTtsBackend.setVoiceProfile(voiceProfile)
-            systemTtsBackend.speak(text)
+            if (systemTtsBackend.speak(text)) {
+                startSpeakingMonitor(systemTtsBackend)
+            }
         }
     }
 
     fun stopSpeaking() {
+        ttsMonitorJob?.cancel()
+        ttsMonitorJob = null
+        _isSpeaking.value = false
         systemTtsBackend.stop()
         sherpaOnnxTtsBackend.stop()
     }
@@ -134,9 +159,11 @@ class ResponseEngine @Inject constructor(
     fun modelFilePath(): String = llmEngine.modelFilePath()
 
     fun release() {
+        stopSpeaking()
         systemTtsBackend.release()
         sherpaOnnxTtsBackend.release()
         llmEngine.release()
+        scope.cancel()
         Log.i(TAG, "ResponseEngine released")
     }
 
@@ -151,7 +178,19 @@ class ResponseEngine @Inject constructor(
         return systemTtsBackend
     }
 
+    private fun startSpeakingMonitor(backend: AssistantTtsBackend) {
+        ttsMonitorJob?.cancel()
+        _isSpeaking.value = true
+        ttsMonitorJob = scope.launch {
+            while (backend.isSpeaking) {
+                delay(TTS_MONITOR_INTERVAL_MS)
+            }
+            _isSpeaking.value = false
+        }
+    }
+
     companion object {
         private const val TAG = "ResponseEngine"
+        private const val TTS_MONITOR_INTERVAL_MS = 80L
     }
 }

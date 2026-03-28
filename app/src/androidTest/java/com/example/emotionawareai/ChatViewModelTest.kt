@@ -90,6 +90,7 @@ class ChatViewModelTest {
         coEvery { memoryManager.setPremiumUnlocked(any()) } returns Unit
         coEvery { memoryManager.isPremiumFeaturesGloballyEnabled() } returns true
         coEvery { responseEngine.loadModel() } returns true
+        every { responseEngine.isSpeaking } returns MutableStateFlow(false)
 
         every { emotionDetector.emotionFlow }   returns emotionSharedFlow
         every { activityAnalyzer.captionFlow } returns activityCaptionFlow

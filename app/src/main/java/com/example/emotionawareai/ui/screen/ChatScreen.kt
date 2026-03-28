@@ -10,66 +10,47 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.EaseInOutCubic
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.ClosedCaption
+import androidx.compose.material.icons.filled.ClosedCaptionDisabled
 import androidx.compose.material.icons.filled.Hearing
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
-import androidx.compose.material.icons.filled.Videocam
-import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.filled.ClosedCaption
-import androidx.compose.material.icons.filled.ClosedCaptionDisabled
-import androidx.compose.material.icons.automirrored.filled.VolumeOff
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -92,12 +73,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -109,15 +87,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.emotionawareai.R
 import com.example.emotionawareai.ui.ChatViewModel
-import com.example.emotionawareai.ui.component.ActivityCaptionOverlay
+import com.example.emotionawareai.ui.component.AgentPresenceAnimation
 import com.example.emotionawareai.ui.component.DailyCheckInSheet
 import com.example.emotionawareai.ui.component.EmotionIndicator
-import com.example.emotionawareai.ui.component.MessageBubble
 import com.example.emotionawareai.ui.component.PrivacyNoticeDialog
-import com.example.emotionawareai.ui.component.TelemetryDashboard
 import com.example.emotionawareai.ui.component.VoiceInputButton
-import com.example.emotionawareai.ui.component.VoiceModeOverlay
 import com.example.emotionawareai.ui.theme.GlassBorder
 import com.example.emotionawareai.ui.theme.GlassCard
 import com.example.emotionawareai.ui.theme.GradEnd
@@ -129,19 +105,13 @@ import com.example.emotionawareai.ui.theme.NeonPurple
 import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
 
-/** Number of most-recent messages to display in the conversation view. */
-private const val VISIBLE_MESSAGE_COUNT = 4
-
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(viewModel: ChatViewModel) {
-    val messages by viewModel.messages.collectAsStateWithLifecycle()
-    val currentEmotion by viewModel.currentEmotion.collectAsStateWithLifecycle()
-    val audioToneEmotion by viewModel.audioToneEmotion.collectAsStateWithLifecycle()
     val effectiveEmotion by viewModel.effectiveEmotion.collectAsStateWithLifecycle()
-    val activityCaptions by viewModel.activityCaptions.collectAsStateWithLifecycle()
     val isListening by viewModel.isListening.collectAsStateWithLifecycle()
     val isGenerating by viewModel.isGenerating.collectAsStateWithLifecycle()
+    val isSpeaking by viewModel.isSpeaking.collectAsStateWithLifecycle()
     val isModelLoaded by viewModel.isModelLoaded.collectAsStateWithLifecycle()
     val isModelAvailable by viewModel.isModelAvailable.collectAsStateWithLifecycle()
     val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
@@ -151,38 +121,20 @@ fun ChatScreen(viewModel: ChatViewModel) {
     val isCameraEnabled by viewModel.isCameraEnabled.collectAsStateWithLifecycle()
     val isCameraPreviewVisible by viewModel.isCameraPreviewVisible.collectAsStateWithLifecycle()
     val isCaptionsEnabled by viewModel.isCaptionsEnabled.collectAsStateWithLifecycle()
-    val isAiAgentActive by viewModel.isAiAgentActive.collectAsStateWithLifecycle()
-    val toneInsight by viewModel.toneInsight.collectAsStateWithLifecycle()
-    val isProThemeEnabled by viewModel.isProThemeEnabled.collectAsStateWithLifecycle()
-    val isExportWithInsights by viewModel.isExportWithInsights.collectAsStateWithLifecycle()
+    val isVoiceModeActive by viewModel.isVoiceModeActive.collectAsStateWithLifecycle()
     val exportPayload by viewModel.exportPayload.collectAsStateWithLifecycle()
-    val premiumFeaturesEnabled by viewModel.premiumFeaturesGloballyEnabled.collectAsStateWithLifecycle()
     val userName by viewModel.userName.collectAsStateWithLifecycle()
     val userAvatar by viewModel.userAvatar.collectAsStateWithLifecycle()
-    val isVoiceModeActive by viewModel.isVoiceModeActive.collectAsStateWithLifecycle()
+    val speechCaption by viewModel.speechCaption.collectAsStateWithLifecycle()
     val showDailyCheckIn by viewModel.showDailyCheckIn.collectAsStateWithLifecycle()
     val showPrivacyNotice by viewModel.showPrivacyNotice.collectAsStateWithLifecycle()
 
-    // Only the last VISIBLE_MESSAGE_COUNT messages are shown; older ones are in DB.
-    val displayMessages = remember(messages) { messages.takeLast(VISIBLE_MESSAGE_COUNT) }
-    val hiddenCount = (messages.size - VISIBLE_MESSAGE_COUNT).coerceAtLeast(0)
-
     val activity = LocalContext.current as? Activity
     val haptics = LocalHapticFeedback.current
-
-    var inputText by remember { mutableStateOf("") }
-    val listState = rememberLazyListState()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    var inputText by remember { mutableStateOf("") }
 
-    // Scroll to the latest message
-    LaunchedEffect(displayMessages.size) {
-        if (displayMessages.isNotEmpty()) {
-            listState.animateScrollToItem(displayMessages.size - 1)
-        }
-    }
-
-    // Show error snackbar
     LaunchedEffect(errorMessage) {
         errorMessage?.let { msg ->
             scope.launch {
@@ -202,39 +154,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
         viewModel.clearExportPayload()
     }
 
-    // ── Multi-stop animated background gradient ───────────────────────────────
-    val gradientTransition = rememberInfiniteTransition(label = "bgGradient")
-    val gradientShift by gradientTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 8000, easing = EaseInOutCubic),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "gradientShift"
-    )
-    // Accent orb pulse (drives the radial glow blobs)
-    val orbPulse by gradientTransition.animateFloat(
-        initialValue = 0.6f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 3500, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "orbPulse"
-    )
-
-    // Animated gradient colors interpolating between deep-navy anchor stops
-    val gradColor0 = lerp(GradStart, GradMid1, gradientShift)
-    val gradColor1 = lerp(GradMid1, GradMid2, gradientShift)
-    val gradColor2 = lerp(GradMid2, GradEnd, 1f - gradientShift)
-
-    // Send-button scale micro-animation
-    val sendScale by animateFloatAsState(
-        targetValue = if (inputText.isNotBlank() && !isGenerating) 1f else 0.85f,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "sendScale"
-    )
+    val cameraWallpaperVisible = cameraGranted && isCameraEnabled && isCameraPreviewVisible
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -243,33 +163,33 @@ fun ChatScreen(viewModel: ChatViewModel) {
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        // User avatar badge
-                        if (userAvatar.isNotBlank()) {
-                            androidx.compose.foundation.layout.Box(
-                                modifier = Modifier
-                                    .size(30.dp)
-                                    .clip(CircleShape)
-                                    .background(NeonPurple.copy(alpha = 0.3f))
-                                    .border(1.dp, NeonPurple.copy(alpha = 0.6f), CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(userAvatar, style = MaterialTheme.typography.labelLarge)
-                            }
-                            Spacer(Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(30.dp)
+                                .clip(CircleShape)
+                                .background(NeonPurple.copy(alpha = 0.25f))
+                                .border(1.dp, NeonPurple.copy(alpha = 0.5f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(userAvatar.ifBlank { "😊" }, style = MaterialTheme.typography.labelLarge)
                         }
+                        Spacer(Modifier.width(8.dp))
                         Column {
                             Text(
-                                text = if (userName.isNotBlank()) "Hi, $userName" else stringResource(id = com.example.emotionawareai.R.string.app_name),
+                                text = if (userName.isNotBlank()) "Hi, $userName" else stringResource(id = R.string.app_name),
                                 style = MaterialTheme.typography.titleMedium,
                                 color = Color.White
                             )
-                            if (!isModelLoaded) {
-                                Text(
-                                    text = "stub mode",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.outline
-                                )
-                            }
+                            Text(
+                                text = when {
+                                    isSpeaking -> "Ash is speaking"
+                                    isGenerating -> "Ash is thinking"
+                                    isListening -> "Listening to you"
+                                    else -> "Immersive conversation view"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.68f)
+                            )
                         }
                     }
                 },
@@ -289,12 +209,12 @@ fun ChatScreen(viewModel: ChatViewModel) {
                         viewModel.toggleContinuousConversation()
                     }) {
                         Icon(
-                            imageVector = if (isContinuousConversationEnabled) Icons.Filled.MicOff
-                                          else Icons.Filled.Mic,
-                            contentDescription = if (isContinuousConversationEnabled)
+                            imageVector = if (isContinuousConversationEnabled) Icons.Filled.MicOff else Icons.Filled.Mic,
+                            contentDescription = if (isContinuousConversationEnabled) {
                                 "Disable continuous conversation"
-                            else
-                                "Enable continuous conversation",
+                            } else {
+                                "Enable continuous conversation"
+                            },
                             tint = if (isContinuousConversationEnabled) NeonCyan else Color.White
                         )
                     }
@@ -303,8 +223,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
                         viewModel.toggleTts()
                     }) {
                         Icon(
-                            imageVector = if (isTtsEnabled) Icons.AutoMirrored.Filled.VolumeUp
-                                          else Icons.AutoMirrored.Filled.VolumeOff,
+                            imageVector = if (isTtsEnabled) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
                             contentDescription = if (isTtsEnabled) "Disable TTS" else "Enable TTS",
                             tint = if (isTtsEnabled) NeonCyan else Color.White
                         )
@@ -314,7 +233,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
                         viewModel.startNewConversation()
                     }) {
                         Icon(
-                            Icons.Filled.Add,
+                            imageVector = Icons.Filled.Add,
                             contentDescription = "New conversation",
                             tint = Color.White
                         )
@@ -336,269 +255,102 @@ fun ChatScreen(viewModel: ChatViewModel) {
             }
         }
     ) { paddingValues ->
-
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(gradColor0, gradColor1, gradColor2)
-                    )
-                )
+                .background(Brush.verticalGradient(listOf(GradStart, GradMid1, GradMid2, GradEnd)))
                 .padding(paddingValues)
         ) {
-            // ── Accent glow orbs (NeoPOP depth effect) ────────────────────────
+            if (cameraWallpaperVisible) {
+                CameraPreviewOverlay(
+                    modifier = Modifier.fillMaxSize(),
+                    onBitmapFrame = viewModel::onCameraFrame
+                )
+            }
+
             Box(
                 modifier = Modifier
-                    .size((280 * orbPulse).dp)
-                    .align(Alignment.TopStart)
-                    .offset(x = (-60).dp, y = (-40).dp)
+                    .fillMaxSize()
                     .background(
-                        Brush.radialGradient(
+                        Brush.verticalGradient(
                             colors = listOf(
-                                NeonPurple.copy(alpha = 0.18f * orbPulse),
-                                Color.Transparent
+                                GradStart.copy(alpha = 0.28f),
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.18f),
+                                Color.Black.copy(alpha = 0.76f)
                             )
-                        ),
-                        shape = CircleShape
+                        )
                     )
-                    .blur(40.dp)
             )
-            Box(
+
+            if (!cameraWallpaperVisible) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.radialGradient(
+                                colors = listOf(
+                                    NeonPurple.copy(alpha = 0.16f),
+                                    Color.Transparent
+                                )
+                            )
+                        )
+                )
+            }
+
+            Column(
                 modifier = Modifier
-                    .size((200 * (1f - orbPulse * 0.2f)).dp)
-                    .align(Alignment.BottomEnd)
-                    .offset(x = 40.dp, y = 60.dp)
-                    .background(
-                        Brush.radialGradient(
-                            colors = listOf(
-                                NeonCyan.copy(alpha = 0.12f * orbPulse),
-                                Color.Transparent
-                            )
-                        ),
-                        shape = CircleShape
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp)
+                    .navigationBarsPadding()
+                    .imePadding()
+            ) {
+                Spacer(Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    StatusPill(
+                        label = if (isModelLoaded) "BitNet live" else if (isModelAvailable) "Model ready" else "Stub mode",
+                        active = isModelLoaded || isModelAvailable,
+                        icon = Icons.Filled.Bolt
                     )
-                    .blur(50.dp)
-            )
+                    StatusPill(
+                        label = if (cameraWallpaperVisible) "Camera wallpaper" else if (isCameraEnabled) "Camera hidden" else "Camera off",
+                        active = cameraWallpaperVisible,
+                        icon = if (cameraWallpaperVisible) Icons.Filled.CameraAlt else Icons.Filled.VideocamOff
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    EmotionIndicator(emotion = effectiveEmotion)
+                }
 
-            Column(modifier = Modifier.fillMaxSize()) {
+                Spacer(modifier = Modifier.weight(1f))
 
-                // ── Live telemetry dashboard ──────────────────────────────────
-                TelemetryDashboard(
-                    faceEmotion = currentEmotion,
-                    voiceEmotion = audioToneEmotion,
-                    toneInsight = toneInsight,
+                AgentPresenceAnimation(
+                    isListening = isListening,
+                    isGenerating = isGenerating,
+                    isSpeaking = isSpeaking,
+                    speechCaption = speechCaption,
+                    captionsVisible = isCaptionsEnabled,
                     userName = userName,
-                    isListening = isListening
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 20.dp)
                 )
 
-                // ── Session greeting header ───────────────────────────────────
-                SessionHeader(userName = userName)
-                AnimatedVisibility(
-                    visible = !isModelAvailable,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 4.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(
-                                Brush.horizontalGradient(
-                                    listOf(
-                                        NeonPurple.copy(alpha = 0.25f),
-                                        GradMid1.copy(alpha = 0.35f)
-                                    )
-                                )
-                            )
-                            .border(
-                                width = 1.dp,
-                                brush = Brush.horizontalGradient(
-                                    listOf(NeonPurple.copy(alpha = 0.6f), NeonCyan.copy(alpha = 0.4f))
-                                ),
-                                shape = RoundedCornerShape(12.dp)
-                            )
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Bolt,
-                            contentDescription = null,
-                            tint = NeonPurple,
-                            modifier = Modifier
-                                .size(16.dp)
-                                .padding(top = 2.dp)
-                        )
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(
-                                text = "Local AI model not installed",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = NeonPurple
-                            )
-                            Text(
-                                text = "Using preview responses. Copy a .gguf model to:",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White.copy(alpha = 0.7f)
-                            )
-                            Text(
-                                text = viewModel.getModelFilePath(),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = NeonCyan.copy(alpha = 0.9f)
-                            )
-                        }
-                    }
-                }
-
-                // ── Fixed camera preview (embedded, not floating) ─────────────
-                AnimatedVisibility(
-                    visible = cameraGranted && isCameraEnabled,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(100.dp)
-                            .padding(horizontal = 12.dp, vertical = 4.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .border(
-                                width = 1.dp,
-                                brush = Brush.horizontalGradient(
-                                    listOf(
-                                        NeonPurple.copy(alpha = 0.5f),
-                                        NeonCyan.copy(alpha = 0.4f)
-                                    )
-                                ),
-                                shape = RoundedCornerShape(16.dp)
-                            )
-                    ) {
-                        CameraPreviewOverlay(
-                            modifier = Modifier.fillMaxSize(),
-                            onBitmapFrame = viewModel::onCameraFrame
-                        )
-                        // When preview is hidden, overlay an opaque surface so the
-                        // video feed is not visible — but CameraX keeps running for
-                        // emotion / activity analysis in the background.
-                        if (!isCameraPreviewVisible) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(GradStart.copy(alpha = 0.97f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                androidx.compose.foundation.layout.Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.VisibilityOff,
-                                        contentDescription = null,
-                                        tint = NeonCyan.copy(alpha = 0.7f),
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Text(
-                                        text = "Preview hidden • Camera active",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = NeonCyan.copy(alpha = 0.7f)
-                                    )
-                                }
-                            }
-                        }
-                        // Glassmorphism header label
-                        Row(
-                            modifier = Modifier
-                                .align(Alignment.TopStart)
-                                .padding(8.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(GlassCard)
-                                .padding(horizontal = 8.dp, vertical = 3.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .background(
-                                        if (isCameraPreviewVisible) NeonCyan else NeonPurple,
-                                        CircleShape
-                                    )
-                            )
-                            Text(
-                                text = if (isCameraPreviewVisible) "LIVE" else "LIVE · HIDDEN",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (isCameraPreviewVisible) NeonCyan else NeonPurple
-                            )
-                        }
-                        EmotionIndicator(
-                            emotion = effectiveEmotion,
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(8.dp)
-                        )
-                    }
-                }
-
-                // ── Message list (last 2 conversations = 4 messages) ──────────
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    item {
-                        Spacer(Modifier.height(4.dp))
-                        // Show a hint when older messages are hidden
-                        if (hiddenCount > 0) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 2.dp),
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Text(
-                                    text = "↑ $hiddenCount earlier message${if (hiddenCount == 1) "" else "s"} • New conversation to clear",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color.White.copy(alpha = 0.35f)
-                                )
-                            }
-                        }
-                        // Show topic suggestion chips when no messages yet
-                        if (displayMessages.isEmpty()) {
-                            TopicChips(onTopicSelected = { inputText = it })
-                        }
-                    }
-                    items(
-                        items = displayMessages,
-                        key = { it.id }
-                    ) { message ->
-                        MessageBubble(message = message)
-                    }
-                    item { Spacer(Modifier.height(8.dp)) }
-                }
-
-                // ── Activity caption strip ───────────────────────────────────
-                AnimatedVisibility(
-                    visible = cameraGranted && isCaptionsEnabled && activityCaptions.isNotEmpty(),
-                    enter = fadeIn(),
-                    exit = fadeOut()
-                ) {
-                    ActivityCaptionOverlay(captions = activityCaptions)
-                }
-
-                // ── Action chips row ─────────────────────────────────────────
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        .padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     NeoChip(
                         label = if (isContinuousConversationEnabled) "Live on" else "Live off",
                         icon = {
                             Icon(
-                                imageVector = if (isContinuousConversationEnabled) Icons.Filled.Mic
-                                              else Icons.Filled.MicOff,
+                                imageVector = if (isContinuousConversationEnabled) Icons.Filled.Mic else Icons.Filled.MicOff,
                                 contentDescription = null,
                                 modifier = Modifier.size(14.dp)
                             )
@@ -609,14 +361,11 @@ fun ChatScreen(viewModel: ChatViewModel) {
                             viewModel.toggleContinuousConversation()
                         }
                     )
-
-                    // Camera on/off toggle
                     NeoChip(
                         label = if (isCameraEnabled) "Cam on" else "Cam off",
                         icon = {
                             Icon(
-                                imageVector = if (isCameraEnabled) Icons.Filled.Videocam
-                                              else Icons.Filled.VideocamOff,
+                                imageVector = if (isCameraEnabled) Icons.Filled.Videocam else Icons.Filled.VideocamOff,
                                 contentDescription = null,
                                 modifier = Modifier.size(14.dp)
                             )
@@ -627,15 +376,12 @@ fun ChatScreen(viewModel: ChatViewModel) {
                             viewModel.toggleCamera()
                         }
                     )
-
-                    // Camera preview hide/show toggle (only relevant when camera is on)
                     if (isCameraEnabled && cameraGranted) {
                         NeoChip(
-                            label = if (isCameraPreviewVisible) "Preview" else "Hidden",
+                            label = if (isCameraPreviewVisible) "Wallpaper" else "Hidden",
                             icon = {
                                 Icon(
-                                    imageVector = if (isCameraPreviewVisible) Icons.Filled.Visibility
-                                                  else Icons.Filled.VisibilityOff,
+                                    imageVector = if (isCameraPreviewVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
                                     contentDescription = null,
                                     modifier = Modifier.size(14.dp)
                                 )
@@ -647,14 +393,11 @@ fun ChatScreen(viewModel: ChatViewModel) {
                             }
                         )
                     }
-
-                    // Captions toggle
                     NeoChip(
                         label = if (isCaptionsEnabled) "Captions" else "No captions",
                         icon = {
                             Icon(
-                                imageVector = if (isCaptionsEnabled) Icons.Filled.ClosedCaption
-                                              else Icons.Filled.ClosedCaptionDisabled,
+                                imageVector = if (isCaptionsEnabled) Icons.Filled.ClosedCaption else Icons.Filled.ClosedCaptionDisabled,
                                 contentDescription = null,
                                 modifier = Modifier.size(14.dp)
                             )
@@ -665,96 +408,47 @@ fun ChatScreen(viewModel: ChatViewModel) {
                             viewModel.toggleCaptions()
                         }
                     )
-
-                    NeoChip(
-                        label = if (isProThemeEnabled) "Pro Theme" else "Default",
-                        active = isProThemeEnabled,
-                        onClick = {
-                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            viewModel.toggleProTheme()
-                        }
-                    )
-
-                    NeoChip(
-                        label = if (isExportWithInsights) "Insights" else "Transcript",
-                        active = isExportWithInsights,
-                        onClick = { viewModel.toggleExportInsights() }
-                    )
-
-                    NeoChip(
-                        label = "Export",
-                        active = true,
-                        onClick = {
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            viewModel.prepareExportPayload()
-                        }
-                    )
-
-                    // Remote kill-switch toggle (admin/debug feature)
-                    NeoChip(
-                        label = if (premiumFeaturesEnabled) "Features ✓" else "Features ✗",
-                        active = premiumFeaturesEnabled,
-                        onClick = {
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            viewModel.setPremiumFeaturesEnabled(!premiumFeaturesEnabled)
-                        }
-                    )
                 }
 
-                // ── Input bar ────────────────────────────────────────────────
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color.Transparent, GradStart.copy(alpha = 0.9f))
-                            )
-                        )
-                        .border(
-                            width = 1.dp,
-                            color = GlassBorder,
-                            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
-                        )
-                        .padding(horizontal = 12.dp, vertical = 10.dp)
-                        .imePadding()
-                        .navigationBarsPadding(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(Color.Black.copy(alpha = 0.28f))
+                        .border(1.dp, GlassBorder, RoundedCornerShape(24.dp))
+                        .padding(horizontal = 10.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     OutlinedTextField(
                         value = inputText,
                         onValueChange = { inputText = it },
-                        placeholder = {
-                            Text(
-                                "Message or keep talking…",
-                                color = Color.White.copy(alpha = 0.35f)
-                            )
-                        },
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(24.dp),
+                        placeholder = { Text("Send a message or use your voice", color = Color.White.copy(alpha = 0.45f)) },
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = Color.White.copy(alpha = 0.04f),
+                            unfocusedContainerColor = Color.White.copy(alpha = 0.02f),
+                            focusedBorderColor = NeonCyan.copy(alpha = 0.45f),
+                            unfocusedBorderColor = GlassBorder,
+                            cursorColor = NeonCyan,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedPlaceholderColor = Color.White.copy(alpha = 0.45f),
+                            unfocusedPlaceholderColor = Color.White.copy(alpha = 0.45f)
+                        ),
                         maxLines = 4,
                         keyboardOptions = KeyboardOptions(
                             capitalization = KeyboardCapitalization.Sentences,
                             imeAction = ImeAction.Send
                         ),
-                        keyboardActions = KeyboardActions(
-                            onSend = {
-                                if (inputText.isNotBlank()) {
-                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    viewModel.sendMessage(inputText)
-                                    inputText = ""
-                                }
+                        keyboardActions = KeyboardActions(onSend = {
+                            if (inputText.isNotBlank() && !isGenerating) {
+                                viewModel.sendMessage(inputText)
+                                inputText = ""
                             }
-                        ),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = NeonPurple.copy(alpha = 0.7f),
-                            unfocusedBorderColor = GlassBorder,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White.copy(alpha = 0.85f),
-                            cursorColor = NeonCyan,
-                            focusedContainerColor = GlassCard,
-                            unfocusedContainerColor = Color(0x0DFFFFFF)
-                        )
+                        })
                     )
 
                     VoiceInputButton(
@@ -771,27 +465,20 @@ fun ChatScreen(viewModel: ChatViewModel) {
 
                     Box(
                         modifier = Modifier
-                            .scale(sendScale)
                             .size(52.dp)
                             .clip(CircleShape)
                             .background(
-                                if (inputText.isNotBlank() && !isGenerating)
-                                    Brush.radialGradient(
-                                        listOf(NeonPurple, NeonCyan.copy(alpha = 0.6f))
-                                    )
-                                else
-                                    Brush.radialGradient(
-                                        listOf(
-                                            MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                                            MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
-                                        )
-                                    )
+                                if (inputText.isNotBlank() && !isGenerating) {
+                                    Brush.radialGradient(listOf(NeonPurple, NeonCyan.copy(alpha = 0.68f)))
+                                } else {
+                                    Brush.radialGradient(listOf(Color.White.copy(alpha = 0.14f), Color.Transparent))
+                                }
                             ),
                         contentAlignment = Alignment.Center
                     ) {
                         IconButton(
                             onClick = {
-                                if (inputText.isNotBlank()) {
+                                if (inputText.isNotBlank() && !isGenerating) {
                                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                     viewModel.sendMessage(inputText)
                                     inputText = ""
@@ -808,23 +495,10 @@ fun ChatScreen(viewModel: ChatViewModel) {
                         }
                     }
                 }
+
+                Spacer(Modifier.height(12.dp))
             }
 
-            // ── Voice mode fullscreen overlay ─────────────────────────────────
-            AnimatedVisibility(
-                visible = isVoiceModeActive,
-                modifier = Modifier.fillMaxSize(),
-                enter = fadeIn(),
-                exit = fadeOut()
-            ) {
-                VoiceModeOverlay(
-                    isListening = isListening,
-                    isGenerating = isGenerating,
-                    onExit = { viewModel.toggleVoiceMode() }
-                )
-            }
-
-            // Daily check-in sheet
             if (showDailyCheckIn) {
                 DailyCheckInSheet(
                     onSubmit = { score, note -> viewModel.submitMoodCheckIn(score, note) },
@@ -832,7 +506,6 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 )
             }
 
-            // Privacy notice dialog
             if (showPrivacyNotice) {
                 PrivacyNoticeDialog(onDismiss = { viewModel.dismissPrivacyNotice() })
             }
@@ -840,7 +513,35 @@ fun ChatScreen(viewModel: ChatViewModel) {
     }
 }
 
-// ── NeoPOP-style assist chip ───────────────────────────────────────────────────
+@Composable
+private fun StatusPill(
+    label: String,
+    active: Boolean,
+    icon: androidx.compose.ui.graphics.vector.ImageVector
+) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color.Black.copy(alpha = 0.26f))
+            .border(1.dp, if (active) NeonCyan.copy(alpha = 0.35f) else GlassBorder, RoundedCornerShape(14.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (active) NeonCyan else Color.White.copy(alpha = 0.6f),
+            modifier = Modifier.size(14.dp)
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White.copy(alpha = 0.8f)
+        )
+    }
+}
+
 @Composable
 private fun NeoChip(
     label: String,
@@ -855,24 +556,22 @@ private fun NeoChip(
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
-                color = if (active) NeonCyan else Color.White.copy(alpha = 0.6f)
+                color = if (active) NeonCyan else Color.White.copy(alpha = 0.68f)
             )
         },
         leadingIcon = icon,
         modifier = modifier,
         colors = AssistChipDefaults.assistChipColors(
-            containerColor = if (active) NeonPurple.copy(alpha = 0.18f) else GlassCard,
-            labelColor = if (active) NeonCyan else Color.White.copy(alpha = 0.6f),
-            leadingIconContentColor = if (active) NeonCyan else Color.White.copy(alpha = 0.5f)
+            containerColor = if (active) NeonPurple.copy(alpha = 0.16f) else GlassCard,
+            labelColor = if (active) NeonCyan else Color.White.copy(alpha = 0.68f),
+            leadingIconContentColor = if (active) NeonCyan else Color.White.copy(alpha = 0.58f)
         ),
         border = AssistChipDefaults.assistChipBorder(
             enabled = true,
-            borderColor = if (active) NeonPurple.copy(alpha = 0.45f) else GlassBorder
+            borderColor = if (active) NeonPurple.copy(alpha = 0.42f) else GlassBorder
         )
     )
 }
-
-// ── Colour lerp is provided by androidx.compose.ui.graphics.lerp (imported above)
 
 @androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
 @SuppressLint("MissingPermission")
@@ -893,7 +592,7 @@ private fun CameraPreviewOverlay(
     AndroidView(
         factory = { ctx ->
             PreviewView(ctx).also { previewView ->
-                previewView.scaleType = PreviewView.ScaleType.FIT_CENTER
+                previewView.scaleType = PreviewView.ScaleType.FILL_CENTER
                 cameraProviderFuture.addListener({
                     val cameraProvider = cameraProviderFuture.get()
 
@@ -926,100 +625,4 @@ private fun CameraPreviewOverlay(
         },
         modifier = modifier
     )
-}
-
-// ── Session greeting header ────────────────────────────────────────────────────
-@Composable
-private fun SessionHeader(userName: String) {
-    val hour = remember { java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) }
-    val greeting = when {
-        hour < 12 -> "Good morning"
-        hour < 17 -> "Good afternoon"
-        else -> "Good evening"
-    }
-    val affirmations = listOf(
-        "You're doing great 💪",
-        "Small steps add up 🌱",
-        "Be kind to yourself 🤍",
-        "Today is a fresh start ✨",
-        "You've got this 🌟",
-        "Progress over perfection 🎯",
-        "Breathe and take it one step at a time 🧘"
-    )
-    val dayOfWeek = remember { java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_WEEK) }
-    val affirmation = affirmations[(dayOfWeek - 1) % affirmations.size]
-    val dateStr = remember {
-        java.text.SimpleDateFormat("EEEE, MMM d", java.util.Locale.getDefault())
-            .format(java.util.Date())
-    }
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-    ) {
-        Text(
-            text = if (userName.isNotBlank()) "$greeting, $userName" else greeting,
-            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-            color = Color.White
-        )
-        Text(
-            text = dateStr,
-            style = MaterialTheme.typography.bodySmall,
-            color = Color.White.copy(alpha = 0.5f)
-        )
-        Text(
-            text = affirmation,
-            style = MaterialTheme.typography.bodySmall,
-            color = NeonCyan.copy(alpha = 0.8f)
-        )
-    }
-}
-
-// ── Topic suggestion chips ─────────────────────────────────────────────────────
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun TopicChips(onTopicSelected: (String) -> Unit) {
-    val topics = listOf(
-        "Feeling anxious", "Work stress", "Relationship advice",
-        "Boost my motivation", "I can't sleep", "Build confidence"
-    )
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 8.dp)
-    ) {
-        Text(
-            "What's on your mind?",
-            style = MaterialTheme.typography.labelMedium,
-            color = Color.White.copy(alpha = 0.5f),
-            modifier = Modifier.padding(bottom = 8.dp, start = 8.dp)
-        )
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.padding(horizontal = 4.dp)
-        ) {
-            topics.forEach { topic ->
-                FilterChip(
-                    selected = false,
-                    onClick = { onTopicSelected(topic) },
-                    label = {
-                        Text(
-                            topic,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White.copy(alpha = 0.8f)
-                        )
-                    },
-                    colors = FilterChipDefaults.filterChipColors(
-                        containerColor = GlassCard
-                    ),
-                    border = FilterChipDefaults.filterChipBorder(
-                        enabled = true,
-                        selected = false,
-                        borderColor = NeonPurple.copy(alpha = 0.35f)
-                    )
-                )
-            }
-        }
-    }
 }
