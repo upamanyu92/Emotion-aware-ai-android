@@ -73,6 +73,7 @@ class VoiceProcessor @Inject constructor(
 
     private val recognitionListener = object : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) {
+            isRestarting = false
             _listeningStateFlow.tryEmit(true)
             Log.d(TAG, "Ready for speech")
         }
@@ -95,18 +96,29 @@ class VoiceProcessor @Inject constructor(
         override fun onError(error: Int) {
             _listeningStateFlow.tryEmit(false)
             val voiceError = VoiceError.fromCode(error)
-            Log.w(TAG, "Recognition error: $voiceError (code=$error)")
 
-            // In continuous mode, silently restart on benign errors (timeout / no-match)
-            // rather than surfacing them as user-visible errors.
-            if (isContinuousMode && voiceError.isBenignForContinuousMode) {
-                scheduleRestart()
-            } else {
-                _errorFlow.tryEmit(voiceError)
+            // During continuous-mode recovery Android may emit a transient client error
+            // from the recognizer instance that is being replaced. Retry quietly instead
+            // of surfacing a user-visible failure for that expected hand-off.
+            if (isContinuousMode && voiceError.shouldSilentlyRecoverInContinuousMode(isRestarting)) {
+                Log.w(TAG, "Recognition error recovered in continuous mode: $voiceError (code=$error)")
+                isRestarting = false
+                val delayMs = if (voiceError == VoiceError.CLIENT_ERROR) {
+                    CLIENT_ERROR_RESTART_DELAY_MS
+                } else {
+                    RESTART_DELAY_MS
+                }
+                scheduleRestart(delayMs)
+                return
             }
+
+            isRestarting = false
+            Log.w(TAG, "Recognition error: $voiceError (code=$error)")
+            _errorFlow.tryEmit(voiceError)
         }
 
         override fun onResults(results: Bundle?) {
+            isRestarting = false
             _listeningStateFlow.tryEmit(false)
             val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             val topResult = matches?.firstOrNull()
@@ -148,6 +160,7 @@ class VoiceProcessor @Inject constructor(
         }
 
         activeLocale = locale
+        mainHandler.removeCallbacksAndMessages(RESTART_TOKEN)
         destroyCurrentRecognizer()
 
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
@@ -182,6 +195,7 @@ class VoiceProcessor @Inject constructor(
      * Stops the current recognition session. Does not affect [isContinuousMode].
      */
     fun stopListening() {
+        isRestarting = false
         mainHandler.removeCallbacksAndMessages(RESTART_TOKEN)
         destroyCurrentRecognizer()
         _listeningStateFlow.tryEmit(false)
@@ -189,6 +203,7 @@ class VoiceProcessor @Inject constructor(
 
     fun release() {
         isContinuousMode = false
+        isRestarting = false
         mainHandler.removeCallbacksAndMessages(RESTART_TOKEN)
         destroyCurrentRecognizer()
     }
@@ -217,19 +232,19 @@ class VoiceProcessor @Inject constructor(
 
     /**
      * Posts a restart runnable on the main thread after a short delay.
-     * Any previously scheduled restart is cancelled first so only one restart
-     * is ever pending at a time. The [isRestarting] flag is cleared immediately
-     * so that if another error arrives while the delay is still counting down,
-     * the token-based cancellation prevents duplicate scheduling.
+     * Only one restart is ever queued at a time. [isRestarting] remains true
+     * until the replacement recognizer becomes ready or fails again, which
+     * lets us suppress the transient client error emitted during recognizer
+     * hand-off on some devices.
      */
     private fun scheduleRestart(delayMs: Long = RESTART_DELAY_MS) {
-        if (!isContinuousMode) return
-        // Cancel any in-flight restart; 'isRestarting' tracks whether a callback is queued.
+        if (!isContinuousMode || isRestarting) return
         mainHandler.removeCallbacksAndMessages(RESTART_TOKEN)
         isRestarting = true
         mainHandler.postDelayed({
-            isRestarting = false
-            if (isContinuousMode) {
+            if (!isContinuousMode) {
+                isRestarting = false
+            } else {
                 startListening(activeLocale)
             }
         }, RESTART_TOKEN, delayMs)
@@ -238,11 +253,17 @@ class VoiceProcessor @Inject constructor(
     companion object {
         private const val TAG = "VoiceProcessor"
         private const val RESTART_DELAY_MS = 300L
+        private const val CLIENT_ERROR_RESTART_DELAY_MS = 600L
         private val RESTART_TOKEN = Any()
     }
 }
 
 /** Returns true for errors that should silently trigger a restart in continuous mode. */
+internal fun VoiceError.shouldSilentlyRecoverInContinuousMode(isRestarting: Boolean): Boolean =
+    this == VoiceError.NO_MATCH ||
+        this == VoiceError.SPEECH_TIMEOUT ||
+        (this == VoiceError.CLIENT_ERROR && isRestarting)
+
 val VoiceError.isBenignForContinuousMode: Boolean
     get() = this == VoiceError.NO_MATCH || this == VoiceError.SPEECH_TIMEOUT
 
