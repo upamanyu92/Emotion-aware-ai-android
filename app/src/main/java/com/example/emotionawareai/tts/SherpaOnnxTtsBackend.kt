@@ -60,18 +60,19 @@ class SherpaOnnxTtsBackend @Inject constructor(
         }
     }
 
-    override fun isReady(): Boolean = piperVoiceManager.resolveInstalledVoice(selectedVoice) != null
+    override fun isReady(): Boolean = runBlocking { validateVoice(selectedVoice) }
+
+    suspend fun validateVoice(voice: PiperVoice = selectedVoice): Boolean =
+        getOrCreateEngine(voice) != null
 
     override fun speak(text: String): Boolean {
         if (text.isBlank()) return false
-        val installed = piperVoiceManager.resolveInstalledVoice(selectedVoice) ?: return false
         synthesisJob?.cancel()
         stopTrack()
+        val voice = selectedVoice
         synthesisJob = scope.launch {
             try {
-                val tts = engineMutex.withLock {
-                    offlineTts ?: createEngine(installed).also { offlineTts = it }
-                }
+                val tts = getOrCreateEngine(voice) ?: return@launch
                 val audio = tts.generate(text, 0, 1.0f)
                 playAudio(audio.samples, audio.sampleRate)
             } catch (e: Exception) {
@@ -115,6 +116,20 @@ class SherpaOnnxTtsBackend @Inject constructor(
             .setModel(modelConfig)
             .build()
         return OfflineTts(config)
+    }
+
+    private suspend fun getOrCreateEngine(voice: PiperVoice): OfflineTts? {
+        val installed = piperVoiceManager.resolveInstalledVoice(voice) ?: return null
+        return engineMutex.withLock {
+            offlineTts ?: try {
+                createEngine(installed).also { offlineTts = it }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to initialize neural TTS for ${voice.name}", e)
+                offlineTts?.release()
+                offlineTts = null
+                null
+            }
+        }
     }
 
     private fun playAudio(samples: FloatArray, sampleRate: Int) {

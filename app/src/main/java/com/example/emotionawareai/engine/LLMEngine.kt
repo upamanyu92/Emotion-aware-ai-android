@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -25,6 +26,7 @@ class LLMEngine @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     private var nativeHandle: Long = 0L
+    private val stubResponseCounter = AtomicInteger(0)
 
     val isLoaded: Boolean get() = nativeHandle != 0L
 
@@ -111,7 +113,13 @@ class LLMEngine @Inject constructor(
             // Re-emit as a single chunk; for true streaming the C++ layer
             // would call the callback per-token and we'd emit inside the lambda.
             // Restructure to Flow<String> emission here once llama.cpp is wired in.
-            emit(tokenBuffer.toString())
+            val nativeResponse = tokenBuffer.toString()
+            if (nativeResponse.normalizedForComparison() == NATIVE_PLACEHOLDER_RESPONSE.normalizedForComparison()) {
+                Log.w(TAG, "Native runtime returned placeholder output; using Kotlin stub response instead")
+                emit(generateStubResponse(prompt))
+            } else {
+                emit(nativeResponse)
+            }
         } else {
             Log.e(TAG, "Native generation failed")
             emit("Sorry, I encountered an error generating a response.")
@@ -127,9 +135,9 @@ class LLMEngine @Inject constructor(
         val emotionHint = extractEmotionHint(prompt)
         val userMessage = extractUserMessage(prompt).ifBlank { "hello" }
         val pool = STUB_RESPONSE_POOLS[emotionHint] ?: STUB_RESPONSE_POOLS["NEUTRAL"]!!
-        // Use the hash of the user message to deterministically but variedly index.
-        // Mask to positive range to avoid Integer.MIN_VALUE edge case with abs().
-        val index = (userMessage.lowercase().hashCode() and 0x7FFFFFFF) % pool.size
+        val turnOffset = stubResponseCounter.getAndIncrement() and 0x7FFFFFFF
+        val mixedSeed = (userMessage.lowercase().hashCode() + turnOffset) and 0x7FFFFFFF
+        val index = mixedSeed % pool.size
         return pool[index]
     }
 
@@ -154,6 +162,8 @@ class LLMEngine @Inject constructor(
         val userLine = prompt.lines().firstOrNull { it.startsWith("[USER]") } ?: return ""
         return userLine.removePrefix("[USER]").trim()
     }
+
+    private fun String.normalizedForComparison(): String = trim().replace(Regex("\\s+"), " ")
 
     /**
      * Releases all native resources. Safe to call multiple times.
@@ -183,6 +193,8 @@ class LLMEngine @Inject constructor(
     companion object {
         private const val TAG = "LLMEngine"
         const val DEFAULT_MODEL_FILE = "model.gguf"
+        private const val NATIVE_PLACEHOLDER_RESPONSE =
+            "I understand how you're feeling. I'm here to listen and help you. Tell me more about what's on your mind."
 
         /**
          * Emotion-keyed pools of stub responses. Each pool must have at least 5
