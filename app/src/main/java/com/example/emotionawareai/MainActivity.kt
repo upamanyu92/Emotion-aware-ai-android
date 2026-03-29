@@ -56,6 +56,9 @@ class MainActivity : ComponentActivity() {
             val hasProfile by viewModel.hasUserProfile.collectAsStateWithLifecycle()
             // null = not yet determined; false = not done; true = done
             val isLlmSetup by viewModel.isLlmSetupComplete.collectAsStateWithLifecycle()
+            val llmSetupPhase by viewModel.llmSetupPhase.collectAsStateWithLifecycle()
+            val llmSetupError by viewModel.llmSetupError.collectAsStateWithLifecycle()
+            val modelDownloadProgress by viewModel.modelDownloadProgress.collectAsStateWithLifecycle()
 
             EmotionAwareAITheme(proThemeEnabled = isProThemeEnabled) {
                 Surface(
@@ -77,9 +80,12 @@ class MainActivity : ComponentActivity() {
                         isLlmSetup == false -> {
                             LlmSetupScreen(
                                 detector = viewModel.deviceCapabilityDetector,
-                                onModelSelected = { option ->
-                                    viewModel.saveLlmSelection(option)
-                                }
+                                setupPhase = llmSetupPhase,
+                                downloadProgress = modelDownloadProgress,
+                                setupError = llmSetupError,
+                                onStartSetup = { option -> viewModel.startLlmSetup(option) },
+                                onSkipSetup = { viewModel.skipLlmSetup() },
+                                onRetrySetup = { viewModel.retryLlmSetup() }
                             )
                         }
 

@@ -49,10 +49,28 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /** Represents the lifecycle of an in-app model file installation. */
 enum class ModelInstallState { IDLE, INSTALLING, SUCCESS, ERROR }
+
+/**
+ * Represents the current phase of the initial LLM setup flow shown on the
+ * [LlmSetupScreen]. Only meaningful while [isLlmSetupComplete] is false.
+ */
+enum class LlmSetupPhase {
+    /** User is choosing which model to download. */
+    SELECTING,
+    /** The chosen model is being downloaded. */
+    DOWNLOADING,
+    /** Download finished; now verifying the model loads correctly. */
+    VERIFYING,
+    /** Model is installed and verified (or built-in was chosen). Setup is done. */
+    COMPLETE,
+    /** Download or verification failed. */
+    FAILED
+}
 
 data class SpeechCaption(
     val turnId: Long,
@@ -236,6 +254,20 @@ class ChatViewModel @Inject constructor(
     private val _selectedLlmId = MutableStateFlow("")
     val selectedLlmId: StateFlow<String> = _selectedLlmId.asStateFlow()
 
+    /** Current phase of the initial LLM setup wizard. */
+    private val _llmSetupPhase = MutableStateFlow(LlmSetupPhase.SELECTING)
+    val llmSetupPhase: StateFlow<LlmSetupPhase> = _llmSetupPhase.asStateFlow()
+
+    /** Human-readable error message for the setup screen, non-null only in [LlmSetupPhase.FAILED]. */
+    private val _llmSetupError = MutableStateFlow<String?>(null)
+    val llmSetupError: StateFlow<String?> = _llmSetupError.asStateFlow()
+
+    /**
+     * Forwarded directly from [ModelDownloader] — `true` when the last download
+     * attempt ended in failure.
+     */
+    val isModelDownloadFailed: StateFlow<Boolean> = modelDownloader.downloadFailed
+
     private var generationJob: Job? = null
     private var messageIdCounter = 0L
     private var speechCaptionTurnId = 0L
@@ -385,21 +417,48 @@ class ChatViewModel @Inject constructor(
         // Observe the ModelDownloader for download completion. The download was
         // started by Application.onCreate() before this ViewModel existed, so by
         // the time we reach here it may already be running or even complete.
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch {
             modelDownloader.isDownloading.collect { downloading ->
                 if (!downloading) {
                     val selectedOption = resolveSelectedLlmOption()
-                    val available = !selectedOption.isBuiltIn && responseEngine.isModelFileAvailable()
-                    _isModelAvailable.update { available }
-                    if (available && !_isModelLoaded.value) {
-                        val loaded = responseEngine.loadModel()
-                        _isModelLoaded.update { loaded }
-                        updateAiActiveState()
-                        Log.i(TAG, "${resolveSelectedLlmOption().name} download finished — model loaded=$loaded")
+                    val available = withContext(Dispatchers.IO) {
+                        !selectedOption.isBuiltIn && responseEngine.isModelFileAvailable()
                     }
-                    if (!available && modelDownloader.downloadFailed.value) {
-                        _errorMessage.update {
-                            "${resolveSelectedLlmOption().name} download failed. Check your internet connection and try again."
+                    _isModelAvailable.update { available }
+
+                    if (_llmSetupPhase.value == LlmSetupPhase.DOWNLOADING) {
+                        // We are in the initial setup flow — handle phase transitions here.
+                        if (available) {
+                            _llmSetupPhase.update { LlmSetupPhase.VERIFYING }
+                            val loaded = withContext(Dispatchers.IO) { responseEngine.loadModel() }
+                            _isModelLoaded.update { loaded }
+                            updateAiActiveState()
+                            if (loaded) {
+                                finishLlmSetup(selectedOption)
+                            } else {
+                                _llmSetupPhase.update { LlmSetupPhase.FAILED }
+                                _llmSetupError.update {
+                                    "Failed to load ${selectedOption.name}. The model file may be corrupted."
+                                }
+                            }
+                        } else if (modelDownloader.downloadFailed.value) {
+                            _llmSetupPhase.update { LlmSetupPhase.FAILED }
+                            _llmSetupError.update {
+                                "Download failed for ${selectedOption.name}. Check your internet connection and try again."
+                            }
+                        }
+                    } else {
+                        // Normal post-setup operation: load model if newly available.
+                        if (available && !_isModelLoaded.value) {
+                            val loaded = withContext(Dispatchers.IO) { responseEngine.loadModel() }
+                            _isModelLoaded.update { loaded }
+                            updateAiActiveState()
+                            Log.i(TAG, "${selectedOption.name} download finished — model loaded=$loaded")
+                        }
+                        if (!available && modelDownloader.downloadFailed.value) {
+                            _errorMessage.update {
+                                "${resolveSelectedLlmOption().name} download failed. Check your internet connection and try again."
+                            }
                         }
                     }
                 }
@@ -850,6 +909,86 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    // ── Initial LLM setup wizard actions ─────────────────────────────────────
+
+    /**
+     * Begins the initial setup flow for [option].
+     *
+     * For built-in models this immediately marks setup as complete.
+     * For downloadable models this transitions to [LlmSetupPhase.DOWNLOADING]
+     * and delegates to [ModelDownloader]. Completion (or failure) is delivered
+     * via [llmSetupPhase] and [llmSetupError].
+     */
+    fun startLlmSetup(option: LlmOption) {
+        _selectedLlmId.update { option.id }
+        _llmSetupError.update { null }
+        viewModelScope.launch { memoryManager.setSelectedLlmId(option.id) }
+        if (option.isBuiltIn) {
+            finishLlmSetup(option)
+        } else {
+            _llmSetupPhase.update { LlmSetupPhase.DOWNLOADING }
+            modelDownloader.startDownload(option)
+        }
+    }
+
+    /**
+     * Skips the initial LLM setup and immediately navigates to the next screen.
+     * No model file is downloaded; the app runs in stub mode until a model is
+     * configured from Settings.
+     */
+    fun skipLlmSetup() {
+        _isLlmSetupComplete.update { true }
+        viewModelScope.launch { memoryManager.setLlmSetupComplete() }
+    }
+
+    /**
+     * Cancels the current download (if any), deletes any partial files, and
+     * resets the setup phase to [LlmSetupPhase.SELECTING] so the user can
+     * choose a different model.
+     */
+    fun retryLlmSetup() {
+        // Reset phase BEFORE cancelling the download so the download-completion
+        // observer does not enter the DOWNLOADING branch on the cancel event.
+        _llmSetupPhase.update { LlmSetupPhase.SELECTING }
+        _llmSetupError.update { null }
+        val currentOption = resolveSelectedLlmOption()
+        modelDownloader.cancelDownload()
+        viewModelScope.launch(Dispatchers.IO) {
+            modelDownloader.deleteModelFile(currentOption)
+        }
+    }
+
+    /**
+     * Changes the active LLM from the Settings screen. Cancels any in-progress
+     * download, deletes the old model file if a different model was installed,
+     * and kicks off a fresh download for [option].
+     */
+    fun changeLlmFromSettings(option: LlmOption) {
+        val previousOption = resolveSelectedLlmOption()
+        if (option.id == previousOption.id) {
+            // Re-attempt download if the model is not already loaded.
+            if (!modelDownloader.isDownloading.value && !_isModelLoaded.value) {
+                downloadModel()
+            }
+            return
+        }
+        // Cancel any ongoing download and clean up old files.
+        modelDownloader.cancelDownload()
+        viewModelScope.launch(Dispatchers.IO) {
+            modelDownloader.deleteModelFile(previousOption)
+        }
+        _selectedLlmId.update { option.id }
+        _isModelAvailable.update { false }
+        _isModelLoaded.update { false }
+        updateAiActiveState()
+        viewModelScope.launch { memoryManager.setSelectedLlmId(option.id) }
+        if (option.isBuiltIn) {
+            updateAiActiveState()
+        } else {
+            modelDownloader.startDownload(option)
+        }
+    }
+
     fun submitMoodCheckIn(moodScore: Int, note: String) {
         _showDailyCheckIn.update { false }
         viewModelScope.launch {
@@ -1111,7 +1250,60 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    // ── Chat screen lifecycle ─────────────────────────────────────────────────
+
+    /**
+     * Called when the conversation screen becomes active (navigated to).
+     *
+     * Resumes camera analyzers if the camera setting is on and permission has
+     * been granted, and re-starts continuous listening if that mode is enabled.
+     * This is idempotent — calling it while already active is safe.
+     */
+    fun onChatScreenActive() {
+        Log.i(TAG, "onChatScreenActive")
+        if (_isCameraEnabled.value && _cameraPermissionGranted.value) {
+            emotionDetector.initialize()
+            activityAnalyzer.initialize()
+        }
+        if (_isContinuousConversationEnabled.value &&
+            _audioPermissionGranted.value &&
+            !_isListening.value
+        ) {
+            voiceProcessor.startContinuousListening()
+        }
+    }
+
+    /**
+     * Called when the user navigates away from the conversation screen.
+     *
+     * Pauses camera analyzers and stops listening/speaking so hardware is not
+     * consumed while the screen is not visible. User preferences are NOT changed;
+     * [onChatScreenActive] will restore the prior state on return.
+     */
+    fun onChatScreenInactive() {
+        Log.i(TAG, "onChatScreenInactive")
+        emotionDetector.release()
+        activityAnalyzer.release()
+        voiceProcessor.stopContinuousListening()
+        responseEngine.stopSpeaking()
+    }
+
     // ── Private Helpers ───────────────────────────────────────────────────────
+
+    /**
+     * Marks the LLM setup as complete, transitions [llmSetupPhase] to
+     * [LlmSetupPhase.COMPLETE], and persists the completion flag.
+     */
+    private fun finishLlmSetup(option: LlmOption) {
+        _llmSetupPhase.update { LlmSetupPhase.COMPLETE }
+        _isLlmSetupComplete.update { true }
+        if (option.isBuiltIn) {
+            _isModelAvailable.update { false }
+            _isModelLoaded.update { false }
+        }
+        updateAiActiveState()
+        viewModelScope.launch { memoryManager.setLlmSetupComplete() }
+    }
 
     private fun handleVoiceError(error: VoiceError) {
         // Benign errors in continuous mode are handled by VoiceProcessor's auto-restart.
