@@ -111,7 +111,7 @@ fun SettingsScreen(viewModel: ChatViewModel) {
 
     var showDeleteDialog by remember { mutableStateOf(false) }
     val selectedModel = remember(selectedLlmId) {
-        LlmOption.fromId(selectedLlmId) ?: viewModel.deviceCapabilityDetector.recommendedOption()
+        LlmOption.fromId(selectedLlmId) ?: viewModel.getRecommendedLlmOption()
     }
 
     // File picker launcher: accepts any file type so users can select .gguf files

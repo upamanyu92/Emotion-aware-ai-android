@@ -72,8 +72,10 @@ class ModelDownloader @Inject constructor(
             Log.i(TAG, "Skipping download for built-in option ${option.name}")
             return
         }
-        if (_isDownloading.value && activeOption?.id == option.id) return
-        if (_isDownloading.value) cancelDownload()
+        if (_isDownloading.value) {
+            if (activeOption?.id == option.id) return
+            cancelDownload()
+        }
         if (ModelFileLocator.isAvailable(context.filesDir, option.modelFileName)) {
             Log.i(TAG, "${option.name} already present — skipping download")
             return
@@ -91,8 +93,10 @@ class ModelDownloader @Inject constructor(
             Log.i(TAG, "Skipping download for built-in option ${option.name}")
             return
         }
-        if (_isDownloading.value && activeOption?.id == option.id) return
-        if (_isDownloading.value) cancelDownload()
+        if (_isDownloading.value) {
+            if (activeOption?.id == option.id) return
+            cancelDownload()
+        }
         launchDownload(option)
     }
 
@@ -302,5 +306,6 @@ class ModelDownloader @Inject constructor(
         private const val MAX_REDIRECTS = 10
     }
 
+    /** Returns true when the option is not built-in and exposes a downloadable GGUF URL. */
     private fun LlmOption.isDownloadable(): Boolean = !isBuiltIn && !downloadUrl.isNullOrBlank()
 }

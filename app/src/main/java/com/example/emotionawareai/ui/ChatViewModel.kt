@@ -322,8 +322,9 @@ class ChatViewModel @Inject constructor(
         _isCaptionsEnabled.update { memoryManager.isCaptionsEnabled() }
 
         val globallyEnabled = memoryManager.isPremiumFeaturesGloballyEnabled()
+        val premiumUnlocked = memoryManager.isPremiumUnlocked()
         _premiumFeaturesGloballyEnabled.update { globallyEnabled }
-        _isPremiumUser.update { globallyEnabled || memoryManager.isPremiumUnlocked() }
+        _isPremiumUser.update { globallyEnabled || premiumUnlocked }
         _isProThemeEnabled.update { memoryManager.isProThemeEnabled() }
         _isExportWithInsights.update { memoryManager.isExportWithInsightsEnabled() }
         // Grant all features for free; respect the remote kill-switch if off.
@@ -487,10 +488,11 @@ class ChatViewModel @Inject constructor(
 
         viewModelScope.launch {
             billingManager.isPremium.collect { premium ->
-                _isPremiumUser.update { premium || _premiumFeaturesGloballyEnabled.value }
+                val globallyEnabled = _premiumFeaturesGloballyEnabled.value
+                _isPremiumUser.update { premium || globallyEnabled }
                 // Feature matrix is driven by the global kill-switch, not billing state.
                 // All features remain free; billing state is tracked for future use.
-                _premiumFeatureMatrix.update { buildPremiumMatrix(_premiumFeaturesGloballyEnabled.value) }
+                _premiumFeatureMatrix.update { buildPremiumMatrix(globallyEnabled) }
                 memoryManager.setPremiumUnlocked(premium)
             }
         }
@@ -984,6 +986,8 @@ class ChatViewModel @Inject constructor(
     /** Returns the expected on-device path for the LLM model file. */
     fun getModelFilePath(): String = responseEngine.modelFilePath()
 
+    fun getRecommendedLlmOption(): LlmOption = deviceCapabilityDetector.recommendedOption()
+
     /**
      * Installs a model file from [uri] (obtained via the system file picker),
      * copies it to the app-private models directory, and reloads the inference
@@ -1182,9 +1186,11 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    /** Returns the selected LLM option, falling back to the device recommendation when needed. */
     private fun resolveSelectedLlmOption(): LlmOption =
         LlmOption.fromId(_selectedLlmId.value) ?: deviceCapabilityDetector.recommendedOption()
 
+    /** Resolves a human-readable display name for a picked document [uri], when available. */
     private fun resolveDisplayName(context: Context, uri: Uri): String {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
             ?.use { cursor ->
@@ -1193,6 +1199,10 @@ class ChatViewModel @Inject constructor(
                     return cursor.getString(nameIndex).orEmpty()
                 }
             }
+        Log.w(
+            TAG,
+            "Could not resolve document display name for URI: $uri; falling back to lastPathSegment, which may omit the .gguf extension for some content URIs"
+        )
         return uri.lastPathSegment.orEmpty()
     }
 
