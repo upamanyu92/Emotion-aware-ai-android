@@ -8,8 +8,12 @@ import com.example.emotionawareai.domain.model.TtsBackend
 import com.example.emotionawareai.domain.model.ActivityCaption
 import com.example.emotionawareai.domain.model.MessageRole
 import com.example.emotionawareai.engine.ActivityAnalyzer
+import com.example.emotionawareai.engine.DeviceCapabilityDetector
 import com.example.emotionawareai.engine.EmotionDetector
+import com.example.emotionawareai.engine.ModelDownloader
+import com.example.emotionawareai.data.database.MoodCheckInDao
 import com.example.emotionawareai.manager.ConversationManager
+import com.example.emotionawareai.manager.InsightsGenerator
 import com.example.emotionawareai.manager.MemoryManager
 import com.example.emotionawareai.manager.ResponseEngine
 import com.example.emotionawareai.tts.PiperVoiceManager
@@ -52,6 +56,11 @@ class ChatViewModelTest {
     private lateinit var memoryManager: MemoryManager
     private lateinit var audioToneAnalyzer: AudioToneAnalyzer
     private lateinit var billingManager: BillingManager
+    private lateinit var moodCheckInDao: MoodCheckInDao
+    private lateinit var insightsGenerator: InsightsGenerator
+    private lateinit var modelDownloader: ModelDownloader
+    private lateinit var piperVoiceManager: PiperVoiceManager
+    private lateinit var deviceCapabilityDetector: DeviceCapabilityDetector
     private lateinit var viewModel: ChatViewModel
 
     private val emotionSharedFlow = MutableSharedFlow<Emotion>(replay = 1)
@@ -76,6 +85,11 @@ class ChatViewModelTest {
         memoryManager       = mockk(relaxed = true)
         audioToneAnalyzer   = mockk(relaxed = true)
         billingManager      = mockk(relaxed = true)
+        moodCheckInDao      = mockk(relaxed = true)
+        insightsGenerator   = mockk(relaxed = true)
+        modelDownloader     = mockk(relaxed = true)
+        piperVoiceManager   = mockk(relaxed = true)
+        deviceCapabilityDetector = mockk(relaxed = true)
 
         coEvery { conversationManager.ensureConversation() } returns 1L
         coEvery { conversationManager.getActiveConversationId() } returns 1L
@@ -91,6 +105,19 @@ class ChatViewModelTest {
         coEvery { memoryManager.isPremiumFeaturesGloballyEnabled() } returns true
         coEvery { responseEngine.loadModel() } returns true
         every { responseEngine.isSpeaking } returns MutableStateFlow(false)
+        every { responseEngine.isModelFileAvailable() } returns false
+        every { responseEngine.modelFilePath() } returns "/data/user/0/com.example.emotionawareai/files/models/model.gguf"
+
+        coEvery { insightsGenerator.getLatestInsight() } returns null
+        every { insightsGenerator.observeInsights() } returns flowOf(emptyList())
+
+        every { modelDownloader.isDownloading } returns MutableStateFlow(false)
+        every { modelDownloader.downloadProgress } returns MutableStateFlow(null)
+        every { modelDownloader.downloadFailed } returns MutableStateFlow(false)
+        every { piperVoiceManager.isDownloading } returns MutableStateFlow(false)
+        every { piperVoiceManager.downloadProgress } returns MutableStateFlow(null)
+        every { piperVoiceManager.downloadFailed } returns MutableStateFlow(false)
+        every { piperVoiceManager.isVoiceInstalled(any()) } returns false
 
         every { emotionDetector.emotionFlow }   returns emotionSharedFlow
         every { activityAnalyzer.captionFlow } returns activityCaptionFlow
@@ -115,7 +142,12 @@ class ChatViewModelTest {
             voiceProcessor      = voiceProcessor,
             memoryManager       = memoryManager,
             audioToneAnalyzer   = audioToneAnalyzer,
-            billingManager      = billingManager
+            billingManager      = billingManager,
+            moodCheckInDao      = moodCheckInDao,
+            insightsGenerator   = insightsGenerator,
+            modelDownloader     = modelDownloader,
+            piperVoiceManager   = piperVoiceManager,
+            deviceCapabilityDetector = deviceCapabilityDetector
         )
     }
 

@@ -47,5 +47,9 @@ data class UserPreferenceEntity(
         const val KEY_TTS_BACKEND = "tts_backend"
         /** Selected Piper neural voice name. */
         const val KEY_PIPER_VOICE = "piper_voice"
+        /** Whether the LLM setup has been completed. */
+        const val KEY_LLM_SETUP_COMPLETE = "llm_setup_complete"
+        /** ID of the selected LLM option (matches [LlmOption.id]). */
+        const val KEY_SELECTED_LLM_ID = "selected_llm_id"
     }
 }

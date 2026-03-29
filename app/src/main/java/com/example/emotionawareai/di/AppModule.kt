@@ -13,6 +13,7 @@ import com.example.emotionawareai.domain.repository.ConversationRepository
 import com.example.emotionawareai.domain.repository.IMemoryRepository
 import com.example.emotionawareai.domain.repository.MemoryFragmentRepository
 import com.example.emotionawareai.engine.ActivityAnalyzer
+import com.example.emotionawareai.engine.DeviceCapabilityDetector
 import com.example.emotionawareai.engine.EmotionDetector
 import com.example.emotionawareai.engine.LLMEngine
 import com.example.emotionawareai.manager.ConversationManager
@@ -145,4 +146,10 @@ object AppModule {
         weeklyInsightDao: WeeklyInsightDao,
         repository: ConversationRepository
     ): InsightsGenerator = InsightsGenerator(moodCheckInDao, sessionGoalDao, weeklyInsightDao, repository)
+
+    @Provides
+    @Singleton
+    fun provideDeviceCapabilityDetector(
+        @ApplicationContext context: Context
+    ): DeviceCapabilityDetector = DeviceCapabilityDetector(context)
 }

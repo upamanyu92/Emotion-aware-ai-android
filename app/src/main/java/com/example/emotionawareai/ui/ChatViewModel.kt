@@ -17,11 +17,13 @@ import com.example.emotionawareai.billing.PremiumOffer
 import com.example.emotionawareai.billing.PremiumPlanType
 import com.example.emotionawareai.domain.model.PremiumFeature
 import com.example.emotionawareai.engine.ActivityAnalyzer
+import com.example.emotionawareai.engine.DeviceCapabilityDetector
 import com.example.emotionawareai.engine.EmotionDetector
 import com.example.emotionawareai.engine.ModelDownloader
 import com.example.emotionawareai.data.database.MoodCheckInDao
 import com.example.emotionawareai.data.model.MoodCheckInEntity
 import com.example.emotionawareai.domain.model.GrowthArea
+import com.example.emotionawareai.domain.model.LlmOption
 import com.example.emotionawareai.domain.model.SessionGoal
 import com.example.emotionawareai.domain.model.TtsBackend
 import com.example.emotionawareai.domain.model.TtsVoiceProfile
@@ -70,7 +72,8 @@ class ChatViewModel @Inject constructor(
     private val moodCheckInDao: MoodCheckInDao,
     private val insightsGenerator: InsightsGenerator,
     private val modelDownloader: ModelDownloader,
-    private val piperVoiceManager: PiperVoiceManager
+    private val piperVoiceManager: PiperVoiceManager,
+    val deviceCapabilityDetector: DeviceCapabilityDetector
 ) : ViewModel() {
 
     // ── UI State ─────────────────────────────────────────────────────────────
@@ -221,6 +224,17 @@ class ChatViewModel @Inject constructor(
     private val _userAvatar = MutableStateFlow("😊")
     val userAvatar: StateFlow<String> = _userAvatar.asStateFlow()
 
+    // ── LLM setup state ───────────────────────────────────────────────────────
+
+    /**
+     * Null = not yet checked. False = LLM not chosen. True = LLM setup done.
+     */
+    private val _isLlmSetupComplete = MutableStateFlow<Boolean?>(null)
+    val isLlmSetupComplete: StateFlow<Boolean?> = _isLlmSetupComplete.asStateFlow()
+
+    private val _selectedLlmId = MutableStateFlow("")
+    val selectedLlmId: StateFlow<String> = _selectedLlmId.asStateFlow()
+
     private var generationJob: Job? = null
     private var messageIdCounter = 0L
     private var speechCaptionTurnId = 0L
@@ -319,6 +333,11 @@ class ChatViewModel @Inject constructor(
         _userName.update { name }
         _userAvatar.update { memoryManager.getUserAvatar() }
         _hasUserProfile.update { name.isNotBlank() }
+
+        // Load LLM setup state
+        val llmSetup = memoryManager.isLlmSetupComplete()
+        _isLlmSetupComplete.update { llmSetup }
+        _selectedLlmId.update { memoryManager.getSelectedLlmId() }
 
         _growthAreas.update { memoryManager.getGrowthAreas() }
         _checkInFrequency.update { memoryManager.getCheckInFrequency() }
@@ -804,6 +823,19 @@ class ChatViewModel @Inject constructor(
     fun dismissPrivacyNotice() {
         _showPrivacyNotice.update { false }
         viewModelScope.launch { memoryManager.setPrivacyNoticeShown() }
+    }
+
+    /**
+     * Saves the user's LLM selection and marks setup as complete.
+     * If a built-in LLM is selected the existing model download is not needed.
+     */
+    fun saveLlmSelection(option: LlmOption) {
+        _selectedLlmId.update { option.id }
+        _isLlmSetupComplete.update { true }
+        viewModelScope.launch {
+            memoryManager.setSelectedLlmId(option.id)
+            memoryManager.setLlmSetupComplete()
+        }
     }
 
     fun submitMoodCheckIn(moodScore: Int, note: String) {

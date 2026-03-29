@@ -299,6 +299,27 @@ class MemoryManager @Inject constructor(
         savePreference(UserPreferenceEntity.KEY_ONBOARDING_COMPLETE, "true")
     }
 
+    // ── LLM setup helpers ─────────────────────────────────────────────────────
+
+    /** Returns `true` when the user has completed the initial LLM selection. */
+    suspend fun isLlmSetupComplete(): Boolean =
+        getPreference(UserPreferenceEntity.KEY_LLM_SETUP_COMPLETE, "false").toBoolean()
+
+    /** Marks LLM setup as complete. */
+    suspend fun setLlmSetupComplete() {
+        savePreference(UserPreferenceEntity.KEY_LLM_SETUP_COMPLETE, "true")
+    }
+
+    /** Returns the ID of the selected LLM, or empty if not yet chosen. */
+    suspend fun getSelectedLlmId(): String =
+        getPreference(UserPreferenceEntity.KEY_SELECTED_LLM_ID, "")
+
+    /** Persists the selected LLM option ID. */
+    suspend fun setSelectedLlmId(id: String) {
+        Log.i(TAG, "setSelectedLlmId: $id")
+        savePreference(UserPreferenceEntity.KEY_SELECTED_LLM_ID, id)
+    }
+
     suspend fun getLastCheckInDate(): String =
         getPreference(UserPreferenceEntity.KEY_LAST_CHECKIN_DATE, "")
 
