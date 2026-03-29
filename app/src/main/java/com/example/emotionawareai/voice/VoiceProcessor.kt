@@ -262,10 +262,12 @@ class VoiceProcessor @Inject constructor(
 internal fun VoiceError.shouldSilentlyRecoverInContinuousMode(isRestarting: Boolean): Boolean =
     this == VoiceError.NO_MATCH ||
         this == VoiceError.SPEECH_TIMEOUT ||
-        (this == VoiceError.CLIENT_ERROR && isRestarting)
+        this == VoiceError.CLIENT_ERROR
 
 val VoiceError.isBenignForContinuousMode: Boolean
-    get() = this == VoiceError.NO_MATCH || this == VoiceError.SPEECH_TIMEOUT
+    get() = this == VoiceError.NO_MATCH ||
+        this == VoiceError.SPEECH_TIMEOUT ||
+        this == VoiceError.CLIENT_ERROR
 
 enum class VoiceError(val message: String) {
     AUDIO_ERROR("Audio recording error"),

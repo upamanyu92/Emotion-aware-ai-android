@@ -17,9 +17,14 @@ class VoiceProcessorLogicTest {
     }
 
     @Test
-    fun `client error is silently recovered only during recognizer restart`() {
+    fun `client error is silently recovered in continuous mode`() {
         assertTrue(VoiceError.CLIENT_ERROR.shouldSilentlyRecoverInContinuousMode(isRestarting = true))
-        assertFalse(VoiceError.CLIENT_ERROR.shouldSilentlyRecoverInContinuousMode(isRestarting = false))
+        assertTrue(VoiceError.CLIENT_ERROR.shouldSilentlyRecoverInContinuousMode(isRestarting = false))
+    }
+
+    @Test
+    fun `client error is treated as benign in continuous mode`() {
+        assertTrue(VoiceError.CLIENT_ERROR.isBenignForContinuousMode)
     }
 
     @Test

@@ -70,6 +70,11 @@ class ResponseEngine @Inject constructor(
         sherpaOnnxTtsBackend.setPiperVoice(voice)
     }
 
+    suspend fun isPiperVoiceReady(voice: PiperVoice = piperVoice): Boolean =
+        withContext(Dispatchers.IO) {
+            sherpaOnnxTtsBackend.validateVoice(voice)
+        }
+
     fun setTtsFallbackListener(listener: ((String) -> Unit)?) {
         ttsFallbackListener = listener
     }

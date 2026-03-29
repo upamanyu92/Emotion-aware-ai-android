@@ -292,8 +292,8 @@ class ChatViewModel @Inject constructor(
         val piperVoice = memoryManager.getPiperVoice()
         _piperVoice.update { piperVoice }
         responseEngine.setPiperVoice(piperVoice)
-        refreshPiperVoiceInstallState()
-        if (backend == TtsBackend.SHERPA_PIPER && !_isSelectedPiperVoiceInstalled.value) {
+        val isPiperVoiceReady = refreshPiperVoiceInstallState()
+        if (backend == TtsBackend.SHERPA_PIPER && !isPiperVoiceReady) {
             piperVoiceManager.startDownloadIfAbsent(piperVoice)
         }
 
@@ -639,7 +639,7 @@ class ChatViewModel @Inject constructor(
         if (backend == TtsBackend.SHERPA_PIPER) {
             piperVoiceManager.startDownloadIfAbsent(_piperVoice.value)
         }
-        refreshPiperVoiceInstallState()
+        refreshPiperVoiceInstallStateAsync()
         viewModelScope.launch {
             memoryManager.setTtsBackend(backend)
         }
@@ -648,8 +648,8 @@ class ChatViewModel @Inject constructor(
     fun setPiperVoice(voice: PiperVoice) {
         _piperVoice.update { voice }
         responseEngine.setPiperVoice(voice)
-        refreshPiperVoiceInstallState()
-        if (_ttsBackend.value == TtsBackend.SHERPA_PIPER && !_isSelectedPiperVoiceInstalled.value) {
+        refreshPiperVoiceInstallStateAsync()
+        if (_ttsBackend.value == TtsBackend.SHERPA_PIPER) {
             piperVoiceManager.startDownloadIfAbsent(voice)
         }
         viewModelScope.launch {
@@ -986,19 +986,35 @@ class ChatViewModel @Inject constructor(
         _modelInstallState.update { ModelInstallState.IDLE }
     }
 
-    private fun refreshPiperVoiceInstallState() {
-        _isSelectedPiperVoiceInstalled.update { piperVoiceManager.isVoiceInstalled(_piperVoice.value) }
+    private suspend fun refreshPiperVoiceInstallState(): Boolean {
+        val selectedVoice = _piperVoice.value
+        val ready = responseEngine.isPiperVoiceReady(selectedVoice)
+        if (_piperVoice.value == selectedVoice) {
+            _isSelectedPiperVoiceInstalled.update { ready }
+        }
+        return ready
+    }
+
+    private fun refreshPiperVoiceInstallStateAsync() {
+        viewModelScope.launch {
+            refreshPiperVoiceInstallState()
+        }
     }
 
     private fun observePiperVoiceDownloads() {
         viewModelScope.launch {
             piperVoiceManager.isDownloading.collect { downloading ->
                 if (!downloading) {
-                    refreshPiperVoiceInstallState()
-                    if (_ttsBackend.value == TtsBackend.SHERPA_PIPER && !_isSelectedPiperVoiceInstalled.value &&
-                        piperVoiceManager.downloadFailed.value
-                    ) {
-                        _errorMessage.update { "Failed to download Piper voice package" }
+                    val selectedVoice = _piperVoice.value
+                    val isReady = refreshPiperVoiceInstallState()
+                    if (_ttsBackend.value == TtsBackend.SHERPA_PIPER && !isReady) {
+                        if (piperVoiceManager.downloadFailed.value) {
+                            _errorMessage.update { "Failed to download Piper voice package" }
+                        } else if (piperVoiceManager.isVoiceInstalled(selectedVoice)) {
+                            _errorMessage.update {
+                                "${selectedVoice.displayName} downloaded but could not be initialized. Falling back to Android system TTS."
+                            }
+                        }
                     }
                 }
             }

@@ -120,6 +120,7 @@ class ChatViewModelSpeechVideoTest {
         coEvery { memoryManager.getLastCheckInDate() } returns ""
         every { memoryManager.observeActiveGoals() } returns flowOf(emptyList())
         coEvery { responseEngine.loadModel() } returns true
+        coEvery { responseEngine.isPiperVoiceReady(any()) } returns false
         every { responseEngine.isSpeaking } returns responseSpeakingFlow
         every { responseEngine.isModelFileAvailable() } returns false
         every { responseEngine.modelFilePath() } returns "/data/user/0/com.example.emotionawareai/files/models/model.gguf"
@@ -151,20 +152,7 @@ class ChatViewModelSpeechVideoTest {
         every { billingManager.isPurchaseInProgress } returns MutableStateFlow(false)
         every { billingManager.isRestoreInProgress } returns MutableStateFlow(false)
 
-        viewModel = ChatViewModel(
-            conversationManager = conversationManager,
-            responseEngine = responseEngine,
-            emotionDetector = emotionDetector,
-            activityAnalyzer = activityAnalyzer,
-            voiceProcessor = voiceProcessor,
-            memoryManager = memoryManager,
-            audioToneAnalyzer = audioToneAnalyzer,
-            billingManager = billingManager,
-            moodCheckInDao = moodCheckInDao,
-            insightsGenerator = insightsGenerator,
-            modelDownloader = modelDownloader,
-            piperVoiceManager = piperVoiceManager
-        )
+        viewModel = createViewModel()
     }
 
     @After
@@ -335,6 +323,27 @@ class ChatViewModelSpeechVideoTest {
     }
 
     @Test
+    fun `downloaded Piper voice that fails readiness surfaces fallback error`() = runTest {
+        val downloadState = MutableStateFlow(true)
+        every { piperVoiceManager.isDownloading } returns downloadState
+        every { piperVoiceManager.downloadFailed } returns MutableStateFlow(false)
+        every { piperVoiceManager.isVoiceInstalled(PiperVoice.ALAN) } returns true
+        coEvery { memoryManager.getTtsBackend() } returns TtsBackend.SHERPA_PIPER
+        coEvery { responseEngine.isPiperVoiceReady(PiperVoice.ALAN) } returns false
+
+        viewModel = createViewModel()
+        advanceUntilIdle()
+
+        downloadState.value = false
+        advanceUntilIdle()
+
+        assertEquals(
+            "Alan downloaded but could not be initialized. Falling back to Android system TTS.",
+            viewModel.errorMessage.value
+        )
+    }
+
+    @Test
     fun `setPiperVoice persists voice and refreshes response engine`() = runTest {
         advanceUntilIdle()
 
@@ -352,5 +361,19 @@ class ChatViewModelSpeechVideoTest {
         // The mock returns false for isModelFileAvailable()
         assertFalse(viewModel.isModelAvailable.value)
     }
-}
 
+    private fun createViewModel() = ChatViewModel(
+        conversationManager = conversationManager,
+        responseEngine = responseEngine,
+        emotionDetector = emotionDetector,
+        activityAnalyzer = activityAnalyzer,
+        voiceProcessor = voiceProcessor,
+        memoryManager = memoryManager,
+        audioToneAnalyzer = audioToneAnalyzer,
+        billingManager = billingManager,
+        moodCheckInDao = moodCheckInDao,
+        insightsGenerator = insightsGenerator,
+        modelDownloader = modelDownloader,
+        piperVoiceManager = piperVoiceManager
+    )
+}
