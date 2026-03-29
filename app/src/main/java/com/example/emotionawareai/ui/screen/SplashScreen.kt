@@ -51,7 +51,7 @@ import kotlin.math.sin
  *
  * Features:
  * - Deep gradient background with floating particle animation
- * - Banner image (IMG_0232.PNG) that scales up with spring-like easing
+ * - Banner image (splash_banner) that scales up with spring-like easing
  * - Pulsating glow ring evoking a heartbeat / emotional-awareness theme
  * - Tagline that fades in gracefully
  *
@@ -153,7 +153,7 @@ fun SplashScreen(onFinished: () -> Unit) {
                 drawCircle(
                     color = color.copy(alpha = particleAlpha),
                     radius = particleRadius.dp.toPx(),
-                    center = Offset(cx.toFloat(), cy.toFloat())
+                    center = Offset(cx, cy)
                 )
             }
         }
