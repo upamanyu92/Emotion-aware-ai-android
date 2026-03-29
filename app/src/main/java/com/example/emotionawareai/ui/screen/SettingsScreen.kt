@@ -984,7 +984,7 @@ private fun LlmSelectorDialog(
             androidx.compose.foundation.lazy.LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(optionsWithCompat) { (option, compat) ->
+                itemsSimple(optionsWithCompat) { (option, compat) ->
                     val isSelected = option.id == currentLlmId
                     val compatColor = when {
                         compat.score >= 85 -> Color(0xFF4CAF50)
@@ -1059,7 +1059,7 @@ private fun LlmSelectorDialog(
     )
 }
 
-private fun <T> androidx.compose.foundation.lazy.LazyListScope.items(
+private fun <T> LazyListScope.itemsSimple(
     list: List<T>,
     content: @Composable (T) -> Unit
 ) {

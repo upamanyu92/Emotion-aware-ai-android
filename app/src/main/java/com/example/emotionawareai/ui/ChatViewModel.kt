@@ -421,16 +421,14 @@ class ChatViewModel @Inject constructor(
             modelDownloader.isDownloading.collect { downloading ->
                 if (!downloading) {
                     val selectedOption = resolveSelectedLlmOption()
-                    val available = withContext(Dispatchers.IO) {
-                        !selectedOption.isBuiltIn && responseEngine.isModelFileAvailable()
-                    }
+                    val available = !selectedOption.isBuiltIn && responseEngine.isModelFileAvailable()
                     _isModelAvailable.update { available }
 
                     if (_llmSetupPhase.value == LlmSetupPhase.DOWNLOADING) {
                         // We are in the initial setup flow — handle phase transitions here.
                         if (available) {
                             _llmSetupPhase.update { LlmSetupPhase.VERIFYING }
-                            val loaded = withContext(Dispatchers.IO) { responseEngine.loadModel() }
+                            val loaded = responseEngine.loadModel()
                             _isModelLoaded.update { loaded }
                             updateAiActiveState()
                             if (loaded) {
@@ -450,7 +448,7 @@ class ChatViewModel @Inject constructor(
                     } else {
                         // Normal post-setup operation: load model if newly available.
                         if (available && !_isModelLoaded.value) {
-                            val loaded = withContext(Dispatchers.IO) { responseEngine.loadModel() }
+                            val loaded = responseEngine.loadModel()
                             _isModelLoaded.update { loaded }
                             updateAiActiveState()
                             Log.i(TAG, "${selectedOption.name} download finished — model loaded=$loaded")
@@ -953,6 +951,9 @@ class ChatViewModel @Inject constructor(
         _llmSetupError.update { null }
         val currentOption = resolveSelectedLlmOption()
         modelDownloader.cancelDownload()
+        // Delete files inside the same coroutine so any subsequent startDownload
+        // call will find a clean state. New downloads can only start after the
+        // user explicitly picks a model on the SELECTING screen.
         viewModelScope.launch(Dispatchers.IO) {
             modelDownloader.deleteModelFile(currentOption)
         }
@@ -962,6 +963,9 @@ class ChatViewModel @Inject constructor(
      * Changes the active LLM from the Settings screen. Cancels any in-progress
      * download, deletes the old model file if a different model was installed,
      * and kicks off a fresh download for [option].
+     *
+     * File deletion is awaited before the new download starts to avoid a race
+     * where the downloader writes to a file currently being deleted.
      */
     fun changeLlmFromSettings(option: LlmOption) {
         val previousOption = resolveSelectedLlmOption()
@@ -972,20 +976,20 @@ class ChatViewModel @Inject constructor(
             }
             return
         }
-        // Cancel any ongoing download and clean up old files.
+        // Cancel any ongoing download and clean up old files before starting the
+        // new download. File deletion is fast and both operations happen sequentially
+        // in the same coroutine, preventing a write-to-deleted-file race.
         modelDownloader.cancelDownload()
-        viewModelScope.launch(Dispatchers.IO) {
-            modelDownloader.deleteModelFile(previousOption)
-        }
         _selectedLlmId.update { option.id }
         _isModelAvailable.update { false }
         _isModelLoaded.update { false }
         updateAiActiveState()
-        viewModelScope.launch { memoryManager.setSelectedLlmId(option.id) }
-        if (option.isBuiltIn) {
-            updateAiActiveState()
-        } else {
-            modelDownloader.startDownload(option)
+        viewModelScope.launch {
+            memoryManager.setSelectedLlmId(option.id)
+            modelDownloader.deleteModelFile(previousOption)
+            if (!option.isBuiltIn) {
+                modelDownloader.startDownload(option)
+            }
         }
     }
 
