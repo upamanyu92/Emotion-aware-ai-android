@@ -182,8 +182,8 @@ fun ChatScreen(viewModel: ChatViewModel) {
                             )
                             Text(
                                 text = when {
-                                    isSpeaking -> "Ash is speaking"
-                                    isGenerating -> "Ash is thinking"
+                                    isSpeaking -> "Tara is speaking"
+                                    isGenerating -> "Tara is thinking"
                                     isListening -> "Listening to you"
                                     else -> "Immersive conversation view"
                                 },

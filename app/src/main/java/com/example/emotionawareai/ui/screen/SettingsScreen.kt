@@ -364,7 +364,7 @@ fun SettingsScreen(viewModel: ChatViewModel) {
                     SettingsSection("Conversation") {
                         SettingsToggleRow(
                             title = "Voice output (TTS)",
-                            subtitle = "Ash speaks responses aloud",
+                            subtitle = "Tara speaks responses aloud",
                             icon = if (isTtsEnabled) Icons.AutoMirrored.Filled.VolumeUp
                                    else Icons.AutoMirrored.Filled.VolumeOff,
                             checked = isTtsEnabled,
@@ -414,7 +414,7 @@ fun SettingsScreen(viewModel: ChatViewModel) {
                     SettingsSection("Camera & Detection") {
                         SettingsToggleRow(
                             title = "Camera (emotion detection)",
-                            subtitle = "Facial & posture signals power Ash's empathy",
+                            subtitle = "Facial & posture signals power Tara's empathy",
                             icon = if (isCameraEnabled) Icons.Filled.Camera
                                    else Icons.Filled.VideocamOff,
                             checked = isCameraEnabled,
@@ -485,7 +485,7 @@ fun SettingsScreen(viewModel: ChatViewModel) {
                                 modifier = Modifier.padding(end = 10.dp, top = 2.dp)
                             )
                             Text(
-                                "All data is stored locally on your device. Nothing is sent to external servers. Ash is for personal growth — not medical advice. In a crisis, call 988.",
+                                "All data is stored locally on your device. Nothing is sent to external servers. Tara is for personal growth — not medical advice. In a crisis, call 988.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color.White.copy(alpha = 0.7f)
                             )

@@ -59,7 +59,7 @@ fun PrivacyNoticeDialog(onDismiss: () -> Unit) {
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Ash is designed for everyday personal growth and reflection — not medical care or crisis support. If you're in immediate distress, please call or text 988 (Suicide & Crisis Lifeline).",
+                    "Tara is designed for everyday personal growth and reflection — not medical care or crisis support. If you're in immediate distress, please call or text 988 (Suicide & Crisis Lifeline).",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.7f)
                 )
