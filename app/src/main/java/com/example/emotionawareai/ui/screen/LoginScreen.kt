@@ -686,7 +686,7 @@ fun LoginScreen(
                                 color = Color.White.copy(alpha = 0.8f)
                             )
                             Text(
-                                "ℹ️ Ash is for personal growth, not medical care. If you're in crisis, call 988.",
+                                "ℹ️ Tara is for personal growth, not medical care. If you're in crisis, call 988.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color.White.copy(alpha = 0.7f)
                             )

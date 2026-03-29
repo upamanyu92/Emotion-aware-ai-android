@@ -55,7 +55,7 @@ import com.example.emotionawareai.ui.theme.NeonCyan
 import com.example.emotionawareai.ui.theme.NeonPurple
 import com.example.emotionawareai.ui.theme.NeonRose
 
-private const val ASSISTANT_DISPLAY_NAME = "Ash"
+private const val ASSISTANT_DISPLAY_NAME = "Tara"
 
 private enum class AgentVisualState(
     val title: String,
@@ -69,12 +69,12 @@ private enum class AgentVisualState(
     ),
     THINKING(
         title = "Thinking",
-        subtitle = "Ash is composing the next response",
+        subtitle = "Tara is composing the next response",
         accent = NeonPurple
     ),
     SPEAKING(
         title = "Speaking",
-        subtitle = "Ash is reading the response aloud",
+        subtitle = "Tara is reading the response aloud",
         accent = NeonRose
     ),
     IDLE(
