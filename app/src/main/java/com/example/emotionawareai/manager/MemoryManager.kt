@@ -82,7 +82,7 @@ class MemoryManager @Inject constructor(
         getPreference(UserPreferenceEntity.KEY_CONTINUOUS_CONVERSATION_ENABLED, "false").toBoolean()
 
     suspend fun isPremiumUnlocked(): Boolean =
-        getPreference(UserPreferenceEntity.KEY_PREMIUM_UNLOCKED, "false").toBoolean()
+        getPreference(UserPreferenceEntity.KEY_PREMIUM_UNLOCKED, "true").toBoolean()
 
     suspend fun isProThemeEnabled(): Boolean =
         getPreference(UserPreferenceEntity.KEY_PRO_THEME_ENABLED, "false").toBoolean()

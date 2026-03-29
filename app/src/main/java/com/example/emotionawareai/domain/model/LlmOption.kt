@@ -45,6 +45,18 @@ data class LlmOption(
             isBuiltIn = true
         )
 
+        /** Hugging Face SmolLM2 135M instruct model in sub-100 MB GGUF form. */
+        val SMOLLM2_135M = LlmOption(
+            id = "smollm2_135m",
+            name = "SmolLM2 135M",
+            description = "Tiny instruct model under 100 MB. Best for quick setup and low-end devices.",
+            sizeBytes = 90_000_000L,
+            minRamMb = 1_024,
+            qualityRating = 2,
+            downloadUrl = "https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_0_4_4.gguf",
+            modelFileName = "model.gguf"
+        )
+
         /** Microsoft BitNet b1.58 2B — current default model. */
         val BITNET_2B = LlmOption(
             id = "bitnet_b158_2b",
@@ -106,11 +118,16 @@ data class LlmOption(
         )
 
         /** All downloadable options (excluding built-in). */
-        val DOWNLOADABLE_OPTIONS = listOf(BITNET_2B, TINYLLAMA_1B, GEMMA_2B, PHI3_MINI, MISTRAL_7B)
+        val DOWNLOADABLE_OPTIONS =
+            listOf(SMOLLM2_135M, BITNET_2B, TINYLLAMA_1B, GEMMA_2B, PHI3_MINI, MISTRAL_7B)
 
         /** Returns the full catalogue, optionally including the built-in option. */
         fun allOptions(includeBuiltIn: Boolean): List<LlmOption> =
             if (includeBuiltIn) listOf(GEMINI_NANO) + DOWNLOADABLE_OPTIONS
             else DOWNLOADABLE_OPTIONS
+
+        /** Returns the option matching [id], or null when the ID is unknown. */
+        fun fromId(id: String): LlmOption? =
+            allOptions(includeBuiltIn = true).firstOrNull { it.id == id }
     }
 }

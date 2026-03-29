@@ -2,8 +2,15 @@ package com.example.emotionawareai
 
 import android.app.Application
 import android.util.Log
+import com.example.emotionawareai.domain.model.LlmOption
+import com.example.emotionawareai.engine.DeviceCapabilityDetector
 import com.example.emotionawareai.engine.ModelDownloader
+import com.example.emotionawareai.manager.MemoryManager
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltAndroidApp
@@ -11,19 +18,24 @@ class EmotionAwareApp : Application() {
 
     /**
      * [ModelDownloader] is a Hilt singleton. Injecting it here lets us kick
-     * off the BitNet model download the moment the app process is created —
+     * off the selected model download the moment the app process is created —
      * well before any Activity or ViewModel is alive.
      */
     @Inject lateinit var modelDownloader: ModelDownloader
+    @Inject lateinit var memoryManager: MemoryManager
+    @Inject lateinit var deviceCapabilityDetector: DeviceCapabilityDetector
+
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "EmotionAwareAI application starting")
 
-        // Start downloading the BitNet model immediately so it is ready
-        // (or well on its way) by the time the user reaches the main screen.
-        // startDownloadIfAbsent() is a no-op when the file is already present.
-        modelDownloader.startDownloadIfAbsent()
+        appScope.launch {
+            val selectedOption = LlmOption.fromId(memoryManager.getSelectedLlmId())
+                ?: deviceCapabilityDetector.recommendedOption()
+            modelDownloader.startDownloadIfAbsent(selectedOption)
+        }
     }
 
     override fun onLowMemory() {
