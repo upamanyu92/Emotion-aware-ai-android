@@ -65,11 +65,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.emotionawareai.ui.ChatViewModel
-import com.example.emotionawareai.ui.ModelInstallState
+import com.example.emotionawareai.domain.model.LlmOption
 import com.example.emotionawareai.domain.model.PiperVoice
 import com.example.emotionawareai.domain.model.TtsBackend
 import com.example.emotionawareai.domain.model.TtsVoiceProfile
+import com.example.emotionawareai.ui.ChatViewModel
+import com.example.emotionawareai.ui.ModelInstallState
 import com.example.emotionawareai.ui.theme.GlassBorder
 import com.example.emotionawareai.ui.theme.GlassCard
 import com.example.emotionawareai.ui.theme.GradEnd
@@ -99,6 +100,7 @@ fun SettingsScreen(viewModel: ChatViewModel) {
     val isPremiumUser by viewModel.isPremiumUser.collectAsStateWithLifecycle()
     val checkInFrequency by viewModel.checkInFrequency.collectAsStateWithLifecycle()
     val growthAreas by viewModel.growthAreas.collectAsStateWithLifecycle()
+    val selectedLlmId by viewModel.selectedLlmId.collectAsStateWithLifecycle()
     val isModelAvailable by viewModel.isModelAvailable.collectAsStateWithLifecycle()
     val isModelLoaded by viewModel.isModelLoaded.collectAsStateWithLifecycle()
     val modelInstallState by viewModel.modelInstallState.collectAsStateWithLifecycle()
@@ -108,6 +110,9 @@ fun SettingsScreen(viewModel: ChatViewModel) {
     val context = LocalContext.current
 
     var showDeleteDialog by remember { mutableStateOf(false) }
+    val selectedModel = remember(selectedLlmId) {
+        LlmOption.fromId(selectedLlmId) ?: viewModel.getRecommendedLlmOption()
+    }
 
     // File picker launcher: accepts any file type so users can select .gguf files
     val modelFileLauncher = rememberLauncherForActivityResult(
@@ -206,29 +211,33 @@ fun SettingsScreen(viewModel: ChatViewModel) {
                                 modifier = Modifier.size(24.dp)
                             )
                             Column(modifier = Modifier.weight(1f)) {
+                                val modelName = selectedModel.name
                                 Text(
                                     text = when {
-                                        isModelLoaded -> "BitNet b1.58 loaded"
-                                        isModelDownloading -> "Downloading BitNet b1.58…"
-                                        isModelAvailable -> "BitNet b1.58 installed (not loaded)"
-                                        else -> "BitNet b1.58 not installed"
+                                        selectedModel.isBuiltIn -> "$modelName selected"
+                                        isModelLoaded -> "$modelName loaded"
+                                        isModelDownloading -> "Downloading $modelName…"
+                                        isModelAvailable -> "$modelName installed (not loaded)"
+                                        else -> "$modelName not installed"
                                     },
                                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                                     color = if (isModelLoaded) NeonCyan else Color.White
                                 )
                                 Text(
                                     text = when {
-                                        isModelLoaded -> "On-device inference active (Microsoft 1-bit LLM)"
+                                        selectedModel.isBuiltIn ->
+                                            "This model is built into compatible devices and does not require a download."
+                                        isModelLoaded -> "On-device inference active (${selectedModel.description})"
                                         isModelDownloading -> {
                                             val pct = modelDownloadProgress
                                             if (pct != null && pct >= 0f) {
-                                                "%.0f%% — downloading Microsoft BitNet b1.58 (~500 MB)".format(pct * 100)
+                                                "%.0f%% — downloading $modelName (${selectedModel.sizeLabel})".format(pct * 100)
                                             } else {
-                                                "Downloading Microsoft BitNet b1.58 (~500 MB)…"
+                                                "Downloading $modelName (${selectedModel.sizeLabel})…"
                                             }
                                         }
                                         isModelAvailable -> viewModel.getModelFilePath()
-                                        else -> "Microsoft BitNet b1.58 2B will be downloaded automatically (~500 MB)"
+                                        else -> "$modelName will be downloaded automatically (${selectedModel.sizeLabel})"
                                     },
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Color.White.copy(alpha = 0.6f)
@@ -263,8 +272,8 @@ fun SettingsScreen(viewModel: ChatViewModel) {
                         }
                         HorizontalDivider(color = GlassBorder)
 
-                        // Primary action: auto-download BitNet or cancel ongoing download
-                        if (!isModelAvailable || isModelDownloading) {
+                        // Primary action: auto-download the selected model or cancel ongoing download
+                        if (!selectedModel.isBuiltIn && (!isModelAvailable || isModelDownloading)) {
                             Button(
                                 onClick = {
                                     if (isModelDownloading) viewModel.cancelModelDownload()
@@ -296,7 +305,7 @@ fun SettingsScreen(viewModel: ChatViewModel) {
                                         tint = NeonCyan
                                     )
                                     Spacer(Modifier.size(8.dp))
-                                    Text("Download BitNet Model", color = NeonCyan)
+                                    Text("Download ${selectedModel.name}", color = NeonCyan)
                                 }
                             }
                         }

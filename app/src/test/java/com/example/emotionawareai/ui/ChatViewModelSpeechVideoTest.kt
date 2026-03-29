@@ -3,6 +3,7 @@ package com.example.emotionawareai.ui
 import android.graphics.Bitmap
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule
 import com.example.emotionawareai.domain.model.Emotion
+import com.example.emotionawareai.domain.model.LlmOption
 import com.example.emotionawareai.domain.model.PiperVoice
 import com.example.emotionawareai.domain.model.TtsBackend
 import com.example.emotionawareai.domain.model.ActivityCaption
@@ -250,6 +251,27 @@ class ChatViewModelSpeechVideoTest {
         advanceUntilIdle()
         verify(atLeast = 2) { voiceProcessor.startContinuousListening(any()) }
         coVerify { memoryManager.setContinuousConversationEnabled(true) }
+    }
+
+    @Test
+    fun `premium stays enabled by default when global features are on`() = runTest {
+        every { billingManager.isPremium } returns MutableStateFlow(false)
+        coEvery { memoryManager.isPremiumUnlocked() } returns false
+
+        viewModel = createViewModel()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.isPremiumUser.value)
+    }
+
+    @Test
+    fun `saveLlmSelection starts download for selected downloadable model`() = runTest {
+        advanceUntilIdle()
+
+        viewModel.saveLlmSelection(LlmOption.SMOLLM2_135M)
+
+        verify(exactly = 1) { modelDownloader.startDownload(LlmOption.SMOLLM2_135M) }
+        assertEquals(LlmOption.SMOLLM2_135M.id, viewModel.selectedLlmId.value)
     }
 
     @Test

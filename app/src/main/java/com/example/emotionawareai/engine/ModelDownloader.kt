@@ -2,6 +2,7 @@ package com.example.emotionawareai.engine
 
 import android.content.Context
 import android.util.Log
+import com.example.emotionawareai.domain.model.LlmOption
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,8 +22,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Downloads the Microsoft BitNet b1.58 2B GGUF model from HuggingFace and
- * saves it to the app-private model directory so [LLMEngine] can load it.
+ * Downloads the selected GGUF model from HuggingFace and saves it to the
+ * app-private model directory so [LLMEngine] can load it.
  *
  * This class owns its own process-lifetime [CoroutineScope] so downloads can
  * be started from [Application.onCreate] before any Activity or ViewModel
@@ -38,9 +39,10 @@ class ModelDownloader @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     @Volatile private var downloadJob: Job? = null
+    @Volatile private var activeOption: LlmOption? = null
 
     private val _isDownloading = MutableStateFlow(false)
-    /** `true` while the BitNet model is being fetched from the network. */
+    /** `true` while the selected model is being fetched from the network. */
     val isDownloading: StateFlow<Boolean> = _isDownloading.asStateFlow()
 
     private val _downloadProgress = MutableStateFlow<Float?>(null)
@@ -60,31 +62,42 @@ class ModelDownloader @Inject constructor(
      * Starts a background download if the model is **not** already present.
      *
      * Safe to call from [Application.onCreate]: it is non-blocking and
-     * idempotent — subsequent calls while a download is already running are
-     * ignored, and calls when the file is present return immediately.
+     * idempotent — subsequent calls while a download for the same option is
+     * already running are ignored, and calls when the file is present return
+     * immediately.
      */
     @Synchronized
-    fun startDownloadIfAbsent(
-        modelFileName: String = LLMEngine.DEFAULT_MODEL_FILE
-    ) {
-        if (_isDownloading.value) return
-        if (ModelFileLocator.isAvailable(context.filesDir, modelFileName)) {
-            Log.i(TAG, "Model already present — skipping download")
+    fun startDownloadIfAbsent(option: LlmOption = LlmOption.BITNET_2B) {
+        if (!option.isDownloadable()) {
+            Log.i(TAG, "Skipping download for built-in option ${option.name}")
             return
         }
-        launchDownload(modelFileName)
+        if (_isDownloading.value) {
+            if (activeOption?.id == option.id) return
+            cancelDownload()
+        }
+        if (ModelFileLocator.isAvailable(context.filesDir, option.modelFileName)) {
+            Log.i(TAG, "${option.name} already present — skipping download")
+            return
+        }
+        launchDownload(option)
     }
 
     /**
      * Starts a background download unconditionally, overwriting any existing
-     * file. No-op if a download is already running.
+     * file. If a different model is already downloading, it is cancelled first.
      */
     @Synchronized
-    fun startDownload(
-        modelFileName: String = LLMEngine.DEFAULT_MODEL_FILE
-    ) {
-        if (_isDownloading.value) return
-        launchDownload(modelFileName)
+    fun startDownload(option: LlmOption = LlmOption.BITNET_2B) {
+        if (!option.isDownloadable()) {
+            Log.i(TAG, "Skipping download for built-in option ${option.name}")
+            return
+        }
+        if (_isDownloading.value) {
+            if (activeOption?.id == option.id) return
+            cancelDownload()
+        }
+        launchDownload(option)
     }
 
     /** Cancels any in-progress download. */
@@ -92,25 +105,28 @@ class ModelDownloader @Inject constructor(
     fun cancelDownload() {
         downloadJob?.cancel()
         downloadJob = null
+        activeOption = null
         _isDownloading.value = false
         _downloadProgress.value = null
-        Log.i(TAG, "BitNet model download cancelled")
+        Log.i(TAG, "Model download cancelled")
     }
 
-    private fun launchDownload(modelFileName: String) {
+    private fun launchDownload(option: LlmOption) {
         downloadJob = scope.launch {
+            activeOption = option
             _downloadFailed.value = false
             _isDownloading.value = true
             _downloadProgress.value = 0f
             try {
-                val success = downloadBlocking(modelFileName) { progress ->
+                val success = downloadBlocking(option) { progress ->
                     _downloadProgress.value = progress
                 }
                 if (!success) {
                     _downloadFailed.value = true
-                    Log.e(TAG, "BitNet model download failed")
+                    Log.e(TAG, "${option.name} download failed")
                 }
             } finally {
+                activeOption = null
                 _isDownloading.value = false
                 _downloadProgress.value = null
             }
@@ -120,52 +136,55 @@ class ModelDownloader @Inject constructor(
     // ── Suspend helpers (also usable from callers with their own scope) ───────
 
     /**
-     * Downloads the BitNet model only when it is not already present on-device.
+     * Downloads the model only when it is not already present on-device.
      *
-     * @param modelFileName destination filename under `<filesDir>/models/`.
-     * @param onProgress    called on the IO thread with values in `[0, 1]`,
-     *                      or `-1f` when content-length is unknown.
-     * @return `true` if the model is ready to load (was already present or was
-     *         downloaded successfully), `false` on failure or cancellation.
+     * @param option selected model metadata.
+     * @param onProgress called on the IO thread with values in `[0, 1]`,
+     * or `-1f` when content-length is unknown.
      */
     suspend fun downloadIfAbsent(
-        modelFileName: String = LLMEngine.DEFAULT_MODEL_FILE,
+        option: LlmOption = LlmOption.BITNET_2B,
         onProgress: (Float) -> Unit = {}
     ): Boolean = withContext(Dispatchers.IO) {
-        if (ModelFileLocator.isAvailable(context.filesDir, modelFileName)) {
-            Log.i(TAG, "Model already present — skipping download")
+        if (!option.isDownloadable()) return@withContext true
+        if (ModelFileLocator.isAvailable(context.filesDir, option.modelFileName)) {
+            Log.i(TAG, "${option.name} already present — skipping download")
             return@withContext true
         }
-        downloadBlocking(modelFileName, onProgress)
+        downloadBlocking(option, onProgress)
     }
 
     /**
-     * Unconditionally downloads the BitNet model, overwriting any existing file.
+     * Unconditionally downloads the selected model, overwriting any existing file.
      *
      * Redirects from HuggingFace (up to [MAX_REDIRECTS]) are followed manually
      * so that each hop uses the same timeout settings and can be cancelled.
      */
     suspend fun download(
-        modelFileName: String = LLMEngine.DEFAULT_MODEL_FILE,
+        option: LlmOption = LlmOption.BITNET_2B,
         onProgress: (Float) -> Unit = {}
     ): Boolean = withContext(Dispatchers.IO) {
-        downloadBlocking(modelFileName, onProgress)
+        if (!option.isDownloadable()) return@withContext true
+        downloadBlocking(option, onProgress)
     }
 
     // ── Private implementation ────────────────────────────────────────────────
 
     private suspend fun downloadBlocking(
-        modelFileName: String,
+        option: LlmOption,
         onProgress: (Float) -> Unit
     ): Boolean = withContext(Dispatchers.IO) {
+        val downloadUrl = option.downloadUrl ?: run {
+            Log.w(TAG, "No download URL configured for ${option.name}")
+            return@withContext false
+        }
         val modelsDir = File(context.filesDir, "models").also { it.mkdirs() }
-        val target = File(modelsDir, modelFileName)
-        val tmpFile = File(modelsDir, "$modelFileName.tmp")
+        val target = File(modelsDir, option.modelFileName)
+        val tmpFile = File(modelsDir, "${option.modelFileName}.tmp")
 
         var connection: HttpURLConnection? = null
         try {
-            // Resolve redirects manually (HuggingFace uses HTTP 302 → CDN URL).
-            var currentUrl = URL(BITNET_MODEL_URL)
+            var currentUrl = URL(downloadUrl)
             var redirectsLeft = MAX_REDIRECTS
             while (redirectsLeft-- > 0) {
                 if (!isActive) {
@@ -178,7 +197,6 @@ class ModelDownloader @Inject constructor(
                 conn.readTimeout = READ_TIMEOUT_MS
                 conn.instanceFollowRedirects = false
                 conn.requestMethod = "GET"
-                // Add user agent to avoid bot detection
                 conn.setRequestProperty("User-Agent", "EmotionAwareAI/1.0 (Android)")
                 connection = conn
 
@@ -200,11 +218,9 @@ class ModelDownloader @Inject constructor(
                     } else if (code == HttpURLConnection.HTTP_OK) {
                         break
                     } else {
-                        Log.e(TAG, "HTTP $code downloading BitNet model from $currentUrl")
-                        val errorStream = conn.errorStream
-                        if (errorStream != null) {
-                            val errorBody = errorStream.bufferedReader().use { it.readText() }
-                            Log.e(TAG, "Error response body: ${errorBody.take(500)}")
+                        Log.e(TAG, "HTTP $code downloading ${option.name} from $currentUrl")
+                        conn.errorStream?.bufferedReader()?.use { reader ->
+                            Log.e(TAG, "Error response body: ${reader.readText().take(500)}")
                         }
                         return@withContext false
                     }
@@ -215,18 +231,18 @@ class ModelDownloader @Inject constructor(
             }
 
             val conn = connection ?: run {
-                Log.e(TAG, "Too many redirects for $BITNET_MODEL_URL")
+                Log.e(TAG, "Too many redirects for $downloadUrl")
                 return@withContext false
             }
 
             val responseCode = conn.responseCode
             if (responseCode != HttpURLConnection.HTTP_OK) {
-                Log.e(TAG, "HTTP $responseCode downloading BitNet model")
+                Log.e(TAG, "HTTP $responseCode downloading ${option.name}")
                 return@withContext false
             }
 
             val contentLength = conn.contentLengthLong
-            Log.i(TAG, "Starting download, content length: $contentLength bytes")
+            Log.i(TAG, "Starting download of ${option.name}, content length: $contentLength bytes")
             var bytesRead = 0L
             var downloadComplete = false
 
@@ -237,7 +253,6 @@ class ModelDownloader @Inject constructor(
                     while (input.read(buf).also { n = it } != -1) {
                         if (!isActive) {
                             Log.i(TAG, "Download cancelled by coroutine")
-                            // downloadComplete stays false; tmpFile is cleaned up below.
                             return@use
                         }
                         output.write(buf, 0, n)
@@ -249,7 +264,6 @@ class ModelDownloader @Inject constructor(
                         }
                         onProgress(progress)
 
-                        // Log progress periodically
                         if (bytesRead % (10 * 1024 * 1024) == 0L) {
                             Log.d(TAG, "Downloaded $bytesRead bytes...")
                         }
@@ -263,7 +277,6 @@ class ModelDownloader @Inject constructor(
                 return@withContext false
             }
 
-            // renameTo is atomic but may fail across mount points; fall back to copy+delete.
             if (!tmpFile.renameTo(target)) {
                 try {
                     tmpFile.copyTo(target, overwrite = true)
@@ -274,10 +287,10 @@ class ModelDownloader @Inject constructor(
                     return@withContext false
                 }
             }
-            Log.i(TAG, "BitNet model downloaded to ${target.absolutePath} ($bytesRead bytes)")
+            Log.i(TAG, "${option.name} downloaded to ${target.absolutePath} ($bytesRead bytes)")
             true
         } catch (e: Exception) {
-            Log.e(TAG, "BitNet model download failed", e)
+            Log.e(TAG, "${option.name} download failed", e)
             tmpFile.delete()
             false
         } finally {
@@ -287,20 +300,12 @@ class ModelDownloader @Inject constructor(
 
     companion object {
         private const val TAG = "ModelDownloader"
-
-        /**
-         * Official Microsoft BitNet b1.58 2B 4T model in IQ1_S GGUF format (~500 MB).
-         * The filename `ggml-model-i2_s.gguf` is the HuggingFace distribution name for
-         * the 1-bit IQ1_S quantization.
-         *
-         * Source: https://huggingface.co/microsoft/BitNet-b1.58-2B-4T-GGUF
-         */
-        const val BITNET_MODEL_URL =
-            "https://huggingface.co/microsoft/BitNet-b1.58-2B-4T-GGUF/resolve/main/ggml-model-i2_s.gguf"
-
         private const val CONNECT_TIMEOUT_MS = 30_000
-        private const val READ_TIMEOUT_MS    = 60_000
-        private const val BUFFER_SIZE        = 32 * 1024 // 32 KB chunks
-        private const val MAX_REDIRECTS      = 10
+        private const val READ_TIMEOUT_MS = 60_000
+        private const val BUFFER_SIZE = 32 * 1024
+        private const val MAX_REDIRECTS = 10
     }
+
+    /** Returns true when the option is not built-in and exposes a downloadable GGUF URL. */
+    private fun LlmOption.isDownloadable(): Boolean = !isBuiltIn && !downloadUrl.isNullOrBlank()
 }

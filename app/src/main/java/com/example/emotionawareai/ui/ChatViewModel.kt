@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -170,7 +171,7 @@ class ChatViewModel @Inject constructor(
     private val _isCaptionsEnabled = MutableStateFlow(true)
     val isCaptionsEnabled: StateFlow<Boolean> = _isCaptionsEnabled.asStateFlow()
 
-    private val _isPremiumUser = MutableStateFlow(false)
+    private val _isPremiumUser = MutableStateFlow(true)
     val isPremiumUser: StateFlow<Boolean> = _isPremiumUser.asStateFlow()
 
     private val _isBillingReady = MutableStateFlow(false)
@@ -320,11 +321,12 @@ class ChatViewModel @Inject constructor(
         _isCameraPreviewVisible.update { memoryManager.isCameraPreviewVisible() }
         _isCaptionsEnabled.update { memoryManager.isCaptionsEnabled() }
 
-        _isPremiumUser.update { memoryManager.isPremiumUnlocked() }
+        val globallyEnabled = memoryManager.isPremiumFeaturesGloballyEnabled()
+        val premiumUnlocked = memoryManager.isPremiumUnlocked()
+        _premiumFeaturesGloballyEnabled.update { globallyEnabled }
+        _isPremiumUser.update { globallyEnabled || premiumUnlocked }
         _isProThemeEnabled.update { memoryManager.isProThemeEnabled() }
         _isExportWithInsights.update { memoryManager.isExportWithInsightsEnabled() }
-        val globallyEnabled = memoryManager.isPremiumFeaturesGloballyEnabled()
-        _premiumFeaturesGloballyEnabled.update { globallyEnabled }
         // Grant all features for free; respect the remote kill-switch if off.
         _premiumFeatureMatrix.update { buildPremiumMatrix(globallyEnabled) }
 
@@ -369,7 +371,8 @@ class ChatViewModel @Inject constructor(
             // Load the model immediately if it is already on-disk (e.g. app was
             // previously used, or Application.onCreate already finished the download
             // before this ViewModel was created).
-            val available = responseEngine.isModelFileAvailable()
+            val selectedOption = resolveSelectedLlmOption()
+            val available = !selectedOption.isBuiltIn && responseEngine.isModelFileAvailable()
             _isModelAvailable.update { available }
             if (available) {
                 val loaded = responseEngine.loadModel()
@@ -385,17 +388,18 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             modelDownloader.isDownloading.collect { downloading ->
                 if (!downloading) {
-                    val available = responseEngine.isModelFileAvailable()
+                    val selectedOption = resolveSelectedLlmOption()
+                    val available = !selectedOption.isBuiltIn && responseEngine.isModelFileAvailable()
                     _isModelAvailable.update { available }
                     if (available && !_isModelLoaded.value) {
                         val loaded = responseEngine.loadModel()
                         _isModelLoaded.update { loaded }
                         updateAiActiveState()
-                        Log.i(TAG, "BitNet download finished — model loaded=$loaded")
+                        Log.i(TAG, "${resolveSelectedLlmOption().name} download finished — model loaded=$loaded")
                     }
                     if (!available && modelDownloader.downloadFailed.value) {
                         _errorMessage.update {
-                            "BitNet model download failed. Check your internet connection and try again."
+                            "${resolveSelectedLlmOption().name} download failed. Check your internet connection and try again."
                         }
                     }
                 }
@@ -484,10 +488,11 @@ class ChatViewModel @Inject constructor(
 
         viewModelScope.launch {
             billingManager.isPremium.collect { premium ->
-                _isPremiumUser.update { premium }
+                val globallyEnabled = _premiumFeaturesGloballyEnabled.value
+                _isPremiumUser.update { premium || globallyEnabled }
                 // Feature matrix is driven by the global kill-switch, not billing state.
                 // All features remain free; billing state is tracked for future use.
-                _premiumFeatureMatrix.update { buildPremiumMatrix(_premiumFeaturesGloballyEnabled.value) }
+                _premiumFeatureMatrix.update { buildPremiumMatrix(globallyEnabled) }
                 memoryManager.setPremiumUnlocked(premium)
             }
         }
@@ -832,6 +837,13 @@ class ChatViewModel @Inject constructor(
     fun saveLlmSelection(option: LlmOption) {
         _selectedLlmId.update { option.id }
         _isLlmSetupComplete.update { true }
+        if (option.isBuiltIn) {
+            _isModelAvailable.update { false }
+            _isModelLoaded.update { false }
+            updateAiActiveState()
+        } else {
+            modelDownloader.startDownload(option)
+        }
         viewModelScope.launch {
             memoryManager.setSelectedLlmId(option.id)
             memoryManager.setLlmSetupComplete()
@@ -974,6 +986,8 @@ class ChatViewModel @Inject constructor(
     /** Returns the expected on-device path for the LLM model file. */
     fun getModelFilePath(): String = responseEngine.modelFilePath()
 
+    fun getRecommendedLlmOption(): LlmOption = deviceCapabilityDetector.recommendedOption()
+
     /**
      * Installs a model file from [uri] (obtained via the system file picker),
      * copies it to the app-private models directory, and reloads the inference
@@ -987,7 +1001,7 @@ class ChatViewModel @Inject constructor(
             _modelInstallState.update { ModelInstallState.INSTALLING }
             try {
                 // Validate file extension before reading potentially large data.
-                val fileName = uri.lastPathSegment ?: ""
+                val fileName = resolveDisplayName(context, uri)
                 if (!fileName.endsWith(".gguf", ignoreCase = true)) {
                     Log.e(TAG, "Rejected non-.gguf file: $fileName (URI: $uri)")
                     _modelInstallState.update { ModelInstallState.ERROR }
@@ -1060,7 +1074,12 @@ class ChatViewModel @Inject constructor(
      * If a download is already in progress this is a no-op.
      */
     fun downloadModel() {
-        modelDownloader.startDownload()
+        val option = resolveSelectedLlmOption()
+        if (option.isBuiltIn) {
+            _errorMessage.update { "${option.name} is built into your device and does not need downloading." }
+            return
+        }
+        modelDownloader.startDownload(option)
     }
 
     /** Cancels an in-progress BitNet model download. */
@@ -1165,6 +1184,26 @@ class ChatViewModel @Inject constructor(
         _isAiAgentActive.update {
             _isModelLoaded.value || _cameraPermissionGranted.value || _isListening.value || _isSpeaking.value
         }
+    }
+
+    /** Returns the selected LLM option, falling back to the device recommendation when needed. */
+    private fun resolveSelectedLlmOption(): LlmOption =
+        LlmOption.fromId(_selectedLlmId.value) ?: deviceCapabilityDetector.recommendedOption()
+
+    /** Resolves a human-readable display name for a picked document [uri], when available. */
+    private fun resolveDisplayName(context: Context, uri: Uri): String {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (nameIndex >= 0 && cursor.moveToFirst()) {
+                    return cursor.getString(nameIndex).orEmpty()
+                }
+            }
+        Log.w(
+            TAG,
+            "Could not resolve document display name for URI: $uri; falling back to lastPathSegment, which may omit the .gguf extension for some content URIs"
+        )
+        return uri.lastPathSegment.orEmpty()
     }
 
     private fun hasPremiumFeature(feature: PremiumFeature): Boolean {
