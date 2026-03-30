@@ -1,10 +1,13 @@
 package com.example.emotionawareai.ui.screen
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,6 +28,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Star
@@ -32,8 +36,11 @@ import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -47,11 +54,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.emotionawareai.domain.model.LlmOption
 import com.example.emotionawareai.engine.DeviceCapabilityDetector
+import com.example.emotionawareai.ui.LlmSetupPhase
 import com.example.emotionawareai.ui.theme.GlassBorder
 import com.example.emotionawareai.ui.theme.GlassCard
 import com.example.emotionawareai.ui.theme.GradEnd
@@ -62,17 +71,26 @@ import com.example.emotionawareai.ui.theme.NeonPurple
 import kotlinx.coroutines.delay
 
 /**
- * Initial setup screen where the user chooses their on-device LLM.
+ * Initial setup screen where the user chooses their on-device LLM and triggers
+ * the download.
  *
- * If the device is a Pixel 8+ with Google AI Core installed, the built-in
- * Gemini Nano option appears at the top and is pre-selected as the default.
- * Otherwise the screen shows downloadable models ranked by compatibility
- * with the target device, highlighting the recommended option.
+ * The screen progresses through phases driven by [setupPhase]:
+ *   - [LlmSetupPhase.SELECTING]: model selection list with a "Start Download" button
+ *     and a "Skip" link.
+ *   - [LlmSetupPhase.DOWNLOADING] / [LlmSetupPhase.VERIFYING]: progress UI with a
+ *     cancel/skip option.
+ *   - [LlmSetupPhase.FAILED]: error card with "Try Another Model" and "Skip" buttons.
+ *   - [LlmSetupPhase.COMPLETE]: brief success state before navigation proceeds.
  */
 @Composable
 fun LlmSetupScreen(
     detector: DeviceCapabilityDetector,
-    onModelSelected: (LlmOption) -> Unit
+    setupPhase: LlmSetupPhase,
+    downloadProgress: Float?,
+    setupError: String?,
+    onStartSetup: (LlmOption) -> Unit,
+    onSkipSetup: () -> Unit,
+    onRetrySetup: () -> Unit
 ) {
     val optionsWithCompat = remember { detector.allOptionsWithCompatibility() }
     val recommended = remember { detector.recommendedOption() }
@@ -88,84 +106,141 @@ fun LlmSetupScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(
-                Brush.verticalGradient(
-                    listOf(GradStart, GradMid1, GradEnd)
-                )
+                Brush.verticalGradient(listOf(GradStart, GradMid1, GradEnd))
             )
     ) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 20.dp, vertical = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            // ── Header ───────────────────────────────────────────────────────
-            item {
-                AnimatedVisibility(
-                    visible = visible,
-                    enter = fadeIn(tween(500)) + slideInVertically(tween(500)) { -40 }
-                ) {
-                    Column {
-                        Text(
-                            text = "Choose Your AI Model",
-                            color = Color.White,
-                            fontSize = 26.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Select the best on-device LLM for your experience. " +
-                                "Models run entirely on your phone \u2014 your data never leaves the device.",
-                            color = Color.White.copy(alpha = 0.7f),
-                            fontSize = 14.sp,
-                            lineHeight = 20.sp
-                        )
-                    }
-                }
-            }
-
-            // ── Device info card ─────────────────────────────────────────────
-            item {
-                AnimatedVisibility(
-                    visible = visible,
-                    enter = fadeIn(tween(600, delayMillis = 150)) +
-                        slideInVertically(tween(600, delayMillis = 150)) { 30 }
-                ) {
-                    DeviceInfoCard(detector)
-                }
-            }
-
-            // ── Model list ───────────────────────────────────────────────────
-            itemsIndexed(optionsWithCompat) { index, (option, compat) ->
-                AnimatedVisibility(
-                    visible = visible,
-                    enter = fadeIn(tween(500, delayMillis = 250 + index * 80)) +
-                        slideInVertically(tween(500, delayMillis = 250 + index * 80)) { 40 }
-                ) {
-                    LlmOptionCard(
-                        option = option,
-                        compatibility = compat,
-                        isSelected = selectedId == option.id,
-                        onSelect = { selectedId = option.id }
-                    )
-                }
-            }
-
-            // ── Continue button ──────────────────────────────────────────────
-            item {
-                Spacer(modifier = Modifier.height(8.dp))
-                AnimatedVisibility(
-                    visible = visible,
-                    enter = fadeIn(tween(500, delayMillis = 600))
-                ) {
-                    Button(
-                        onClick = {
+        AnimatedContent(
+            targetState = setupPhase,
+            transitionSpec = {
+                fadeIn(tween(400)) togetherWith fadeOut(tween(300))
+            },
+            label = "setupPhaseContent"
+        ) { phase ->
+            when (phase) {
+                LlmSetupPhase.SELECTING -> {
+                    SelectionContent(
+                        optionsWithCompat = optionsWithCompat,
+                        recommended = recommended,
+                        selectedId = selectedId,
+                        onSelectId = { selectedId = it },
+                        visible = visible,
+                        detector = detector,
+                        onStartSetup = {
                             val selected = optionsWithCompat
                                 .map { it.first }
                                 .firstOrNull { it.id == selectedId }
                                 ?: recommended
-                            onModelSelected(selected)
+                            onStartSetup(selected)
                         },
+                        onSkipSetup = onSkipSetup
+                    )
+                }
+                LlmSetupPhase.DOWNLOADING, LlmSetupPhase.VERIFYING -> {
+                    val selectedOption = optionsWithCompat
+                        .map { it.first }
+                        .firstOrNull { it.id == selectedId }
+                        ?: recommended
+                    DownloadingContent(
+                        option = selectedOption,
+                        phase = phase,
+                        progress = downloadProgress,
+                        onCancel = onRetrySetup,
+                        onSkip = onSkipSetup
+                    )
+                }
+                LlmSetupPhase.FAILED -> {
+                    FailedContent(
+                        errorMessage = setupError
+                            ?: "Download failed. Please try again.",
+                        onRetry = onRetrySetup,
+                        onSkip = onSkipSetup
+                    )
+                }
+                LlmSetupPhase.COMPLETE -> {
+                    SuccessContent()
+                }
+            }
+        }
+    }
+}
+
+// ── Selection phase ───────────────────────────────────────────────────────────
+
+@Composable
+private fun SelectionContent(
+    optionsWithCompat: List<Pair<LlmOption, DeviceCapabilityDetector.Compatibility>>,
+    recommended: LlmOption,
+    selectedId: String,
+    onSelectId: (String) -> Unit,
+    visible: Boolean,
+    detector: DeviceCapabilityDetector,
+    onStartSetup: () -> Unit,
+    onSkipSetup: () -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            AnimatedVisibility(
+                visible = visible,
+                enter = fadeIn(tween(500)) + slideInVertically(tween(500)) { -40 }
+            ) {
+                Column {
+                    Text(
+                        text = "Choose Your AI Model",
+                        color = Color.White,
+                        fontSize = 26.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Select the best on-device LLM for your experience. " +
+                            "Models run entirely on your phone \u2014 your data never leaves the device.",
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp
+                    )
+                }
+            }
+        }
+
+        item {
+            AnimatedVisibility(
+                visible = visible,
+                enter = fadeIn(tween(600, delayMillis = 150)) +
+                    slideInVertically(tween(600, delayMillis = 150)) { 30 }
+            ) {
+                DeviceInfoCard(detector)
+            }
+        }
+
+        itemsIndexed(optionsWithCompat) { index, (option, compat) ->
+            AnimatedVisibility(
+                visible = visible,
+                enter = fadeIn(tween(500, delayMillis = 250 + index * 80)) +
+                    slideInVertically(tween(500, delayMillis = 250 + index * 80)) { 40 }
+            ) {
+                LlmOptionCard(
+                    option = option,
+                    compatibility = compat,
+                    isSelected = selectedId == option.id,
+                    onSelect = { onSelectId(option.id) }
+                )
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(8.dp))
+            AnimatedVisibility(
+                visible = visible,
+                enter = fadeIn(tween(500, delayMillis = 600))
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(
+                        onClick = onStartSetup,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(54.dp),
@@ -175,15 +250,275 @@ fun LlmSetupScreen(
                             contentColor = Color(0xFF0A0F1E)
                         )
                     ) {
+                        val selectedOption = optionsWithCompat
+                            .map { it.first }
+                            .firstOrNull { it.id == selectedId }
+                        val label = if (selectedOption?.isBuiltIn == true) {
+                            "Use Built-in AI"
+                        } else {
+                            "Start Download"
+                        }
                         Text(
-                            text = "Continue",
+                            text = label,
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp
                         )
                     }
+                    OutlinedButton(
+                        onClick = onSkipSetup,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = Color.White.copy(alpha = 0.7f)
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp, Color.White.copy(alpha = 0.25f)
+                        )
+                    ) {
+                        Text(
+                            text = "Skip \u2014 set up later in Settings",
+                            fontSize = 14.sp
+                        )
+                    }
                 }
-                Spacer(modifier = Modifier.height(24.dp))
             }
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+// ── Downloading / verifying phase ────────────────────────────────────────────
+
+@Composable
+private fun DownloadingContent(
+    option: LlmOption,
+    phase: LlmSetupPhase,
+    progress: Float?,
+    onCancel: () -> Unit,
+    onSkip: () -> Unit
+) {
+    val isVerifying = phase == LlmSetupPhase.VERIFYING
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            CircularProgressIndicator(
+                color = NeonCyan,
+                modifier = Modifier.size(64.dp),
+                strokeWidth = 4.dp
+            )
+            Text(
+                text = if (isVerifying) "Verifying ${option.name}…" else "Downloading ${option.name}",
+                color = Color.White,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center
+            )
+            if (!isVerifying) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(GlassCard)
+                        .border(1.dp, GlassBorder, RoundedCornerShape(12.dp))
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (progress != null && progress >= 0f) {
+                        LinearProgressIndicator(
+                            progress = { progress },
+                            modifier = Modifier.fillMaxWidth(),
+                            color = NeonCyan,
+                            trackColor = NeonPurple.copy(alpha = 0.2f)
+                        )
+                        Text(
+                            text = "%.0f%% \u2014 ${option.sizeLabel}".format(progress * 100),
+                            color = Color.White.copy(alpha = 0.7f),
+                            fontSize = 13.sp,
+                            modifier = Modifier.align(Alignment.End)
+                        )
+                    } else {
+                        LinearProgressIndicator(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = NeonCyan,
+                            trackColor = NeonPurple.copy(alpha = 0.2f)
+                        )
+                        Text(
+                            text = "Connecting\u2026",
+                            color = Color.White.copy(alpha = 0.5f),
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+            }
+            Text(
+                text = "All data stays on your device.",
+                color = Color.White.copy(alpha = 0.45f),
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (!isVerifying) {
+                    OutlinedButton(
+                        onClick = onCancel,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = Color.White.copy(alpha = 0.75f)
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp, Color.White.copy(alpha = 0.25f)
+                        )
+                    ) {
+                        Text("Cancel \u2014 choose a different model")
+                    }
+                }
+                OutlinedButton(
+                    onClick = onSkip,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = Color.White.copy(alpha = 0.5f)
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp, Color.White.copy(alpha = 0.15f)
+                    )
+                ) {
+                    Text("Skip to Login", fontSize = 13.sp)
+                }
+            }
+        }
+    }
+}
+
+// ── Failure phase ─────────────────────────────────────────────────────────────
+
+@Composable
+private fun FailedContent(
+    errorMessage: String,
+    onRetry: () -> Unit,
+    onSkip: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.ErrorOutline,
+                contentDescription = "Setup failed",
+                tint = Color(0xFFF44336),
+                modifier = Modifier.size(64.dp)
+            )
+            Text(
+                text = "Setup Failed",
+                color = Color.White,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(GlassCard)
+                    .border(1.dp, Color(0xFFF44336).copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                    .padding(16.dp)
+            ) {
+                Text(
+                    text = errorMessage,
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = onRetry,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(54.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = NeonCyan,
+                        contentColor = Color(0xFF0A0F1E)
+                    )
+                ) {
+                    Text(
+                        "Try Another Model",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                }
+                OutlinedButton(
+                    onClick = onSkip,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = Color.White.copy(alpha = 0.7f)
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp, Color.White.copy(alpha = 0.25f)
+                    )
+                ) {
+                    Text("Skip to Login")
+                }
+            }
+        }
+    }
+}
+
+// ── Success phase ─────────────────────────────────────────────────────────────
+
+@Composable
+private fun SuccessContent() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = "Setup complete",
+                tint = NeonCyan,
+                modifier = Modifier.size(72.dp)
+            )
+            Text(
+                text = "AI Model Ready!",
+                color = Color.White,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "Your on-device AI is installed and verified.",
+                color = Color.White.copy(alpha = 0.65f),
+                fontSize = 14.sp,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }
@@ -312,7 +647,6 @@ private fun LlmOptionCard(
             .padding(14.dp)
     ) {
         Column {
-            // Title row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -322,7 +656,6 @@ private fun LlmOptionCard(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.weight(1f)
                 ) {
-                    // Selection indicator
                     Box(
                         modifier = Modifier
                             .size(22.dp)
@@ -355,7 +688,6 @@ private fun LlmOptionCard(
                     )
                 }
 
-                // Badges
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (compatibility.isRecommended) {
                         Badge(text = "Recommended", color = NeonCyan)
@@ -368,7 +700,6 @@ private fun LlmOptionCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Description
             Text(
                 text = option.description,
                 color = Color.White.copy(alpha = 0.65f),
@@ -380,20 +711,17 @@ private fun LlmOptionCard(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Stats row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Size
                 Text(
                     text = option.sizeLabel,
                     color = Color.White.copy(alpha = 0.6f),
                     fontSize = 12.sp
                 )
 
-                // Quality stars
                 Row {
                     repeat(5) { i ->
                         Icon(
@@ -407,7 +735,6 @@ private fun LlmOptionCard(
                     }
                 }
 
-                // Compatibility badge
                 Text(
                     text = compatibility.label,
                     color = compatColor,
@@ -416,7 +743,6 @@ private fun LlmOptionCard(
                 )
             }
 
-            // RAM headroom for downloadable models
             if (!option.isBuiltIn) {
                 Spacer(modifier = Modifier.height(4.dp))
                 val headroomText = if (compatibility.ramHeadroomMb >= 0)
@@ -446,3 +772,4 @@ private fun Badge(text: String, color: Color) {
             .padding(horizontal = 6.dp, vertical = 2.dp)
     )
 }
+

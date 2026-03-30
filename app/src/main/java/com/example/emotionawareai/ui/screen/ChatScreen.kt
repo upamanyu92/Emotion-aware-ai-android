@@ -135,6 +135,13 @@ fun ChatScreen(viewModel: ChatViewModel) {
     val scope = rememberCoroutineScope()
     var inputText by remember { mutableStateOf("") }
 
+    // Pause mic/camera/TTS when the user navigates away from this screen and
+    // resume the last user-configured state when they return.
+    DisposableEffect(Unit) {
+        viewModel.onChatScreenActive()
+        onDispose { viewModel.onChatScreenInactive() }
+    }
+
     LaunchedEffect(errorMessage) {
         errorMessage?.let { msg ->
             scope.launch {

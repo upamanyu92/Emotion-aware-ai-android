@@ -306,6 +306,18 @@ class ModelDownloader @Inject constructor(
         private const val MAX_REDIRECTS = 10
     }
 
+    /**
+     * Deletes the model file and any in-progress temporary file for [option].
+     * Safe to call even if the files do not exist.
+     */
+    fun deleteModelFile(option: LlmOption) {
+        val modelsDir = File(context.filesDir, "models")
+        val target = File(modelsDir, option.modelFileName)
+        val tmp = File(modelsDir, "${option.modelFileName}.tmp")
+        if (target.delete()) Log.i(TAG, "Deleted model file: ${target.absolutePath}")
+        if (tmp.delete()) Log.i(TAG, "Deleted temp file: ${tmp.absolutePath}")
+    }
+
     /** Returns true when the option is not built-in and exposes a downloadable GGUF URL. */
     private fun LlmOption.isDownloadable(): Boolean = !isBuiltIn && !downloadUrl.isNullOrBlank()
 }
