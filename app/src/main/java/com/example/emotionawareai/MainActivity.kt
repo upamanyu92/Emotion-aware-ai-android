@@ -79,11 +79,9 @@ class MainActivity : ComponentActivity() {
                         // 3. LLM selection not yet done → show setup screen
                         isLlmSetup == false -> {
                             LlmSetupScreen(
-                                detector = viewModel.deviceCapabilityDetector,
                                 setupPhase = llmSetupPhase,
                                 downloadProgress = modelDownloadProgress,
                                 setupError = llmSetupError,
-                                onStartSetup = { option -> viewModel.startLlmSetup(option) },
                                 onSkipSetup = { viewModel.skipLlmSetup() },
                                 onRetrySetup = { viewModel.retryLlmSetup() }
                             )

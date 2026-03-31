@@ -3,7 +3,6 @@ package com.example.emotionawareai
 import android.app.Application
 import android.util.Log
 import com.example.emotionawareai.domain.model.LlmOption
-import com.example.emotionawareai.engine.DeviceCapabilityDetector
 import com.example.emotionawareai.engine.ModelDownloader
 import com.example.emotionawareai.manager.MemoryManager
 import dagger.hilt.android.HiltAndroidApp
@@ -23,7 +22,6 @@ class EmotionAwareApp : Application() {
      */
     @Inject lateinit var modelDownloader: ModelDownloader
     @Inject lateinit var memoryManager: MemoryManager
-    @Inject lateinit var deviceCapabilityDetector: DeviceCapabilityDetector
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -32,8 +30,10 @@ class EmotionAwareApp : Application() {
         Log.i(TAG, "EmotionAwareAI application starting")
 
         appScope.launch {
+            // Use the saved selection (for returning users) or the pre-configured model
+            // (GEMMA_2B) for new installs. Never fall back to device-specific detection.
             val selectedOption = LlmOption.fromId(memoryManager.getSelectedLlmId())
-                ?: deviceCapabilityDetector.recommendedOption()
+                ?: LlmOption.CONFIGURED_MODEL
             modelDownloader.startDownloadIfAbsent(selectedOption)
         }
     }

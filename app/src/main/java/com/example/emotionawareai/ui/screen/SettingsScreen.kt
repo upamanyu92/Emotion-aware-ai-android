@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -70,7 +69,6 @@ import com.example.emotionawareai.domain.model.LlmOption
 import com.example.emotionawareai.domain.model.PiperVoice
 import com.example.emotionawareai.domain.model.TtsBackend
 import com.example.emotionawareai.domain.model.TtsVoiceProfile
-import com.example.emotionawareai.engine.DeviceCapabilityDetector
 import com.example.emotionawareai.ui.ChatViewModel
 import com.example.emotionawareai.ui.ModelInstallState
 import com.example.emotionawareai.ui.theme.GlassBorder
@@ -113,9 +111,8 @@ fun SettingsScreen(viewModel: ChatViewModel) {
     val context = LocalContext.current
 
     var showDeleteDialog by remember { mutableStateOf(false) }
-    var showLlmSelectorDialog by remember { mutableStateOf(false) }
     val selectedModel = remember(selectedLlmId) {
-        LlmOption.fromId(selectedLlmId) ?: viewModel.getRecommendedLlmOption()
+        LlmOption.fromId(selectedLlmId) ?: LlmOption.CONFIGURED_MODEL
     }
 
     // File picker launcher: accepts any file type so users can select .gguf files
@@ -299,14 +296,14 @@ fun SettingsScreen(viewModel: ChatViewModel) {
                                         color = NeonRose
                                     )
                                     Text(
-                                        "The last download failed. Choose a different model or retry.",
+                                        "The model download failed. Check your internet connection and tap Retry.",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = NeonRose.copy(alpha = 0.7f)
                                     )
                                 }
                             }
                             Button(
-                                onClick = { showLlmSelectorDialog = true },
+                                onClick = { viewModel.downloadModel() },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 14.dp, vertical = 4.dp),
@@ -321,7 +318,7 @@ fun SettingsScreen(viewModel: ChatViewModel) {
                                     tint = NeonRose
                                 )
                                 Spacer(Modifier.size(8.dp))
-                                Text("Choose Another Model", color = NeonRose)
+                                Text("Retry Download", color = NeonRose)
                             }
                             HorizontalDivider(color = GlassBorder)
                         }
@@ -362,31 +359,6 @@ fun SettingsScreen(viewModel: ChatViewModel) {
                                     Text("Download ${selectedModel.name}", color = NeonCyan)
                                 }
                             }
-                        }
-
-                        // Change model button: always visible to allow switching LLM
-                        Button(
-                            onClick = { showLlmSelectorDialog = true },
-                            enabled = !isModelDownloading,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 4.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = NeonPurple.copy(alpha = 0.2f),
-                                disabledContainerColor = NeonPurple.copy(alpha = 0.08f)
-                            ),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(
-                                Icons.Filled.Psychology,
-                                contentDescription = null,
-                                tint = if (isModelDownloading) Color.White.copy(alpha = 0.3f) else NeonPurple
-                            )
-                            Spacer(Modifier.size(8.dp))
-                            Text(
-                                "Change AI Model",
-                                color = if (isModelDownloading) Color.White.copy(alpha = 0.3f) else Color.White
-                            )
                         }
 
                         // Secondary: manual file install (advanced users / custom models)
@@ -638,18 +610,6 @@ fun SettingsScreen(viewModel: ChatViewModel) {
                     Text("Cancel", color = Color.White.copy(alpha = 0.6f))
                 }
             }
-        )
-    }
-
-    if (showLlmSelectorDialog) {
-        LlmSelectorDialog(
-            detector = viewModel.deviceCapabilityDetector,
-            currentLlmId = selectedLlmId,
-            onSelect = { option ->
-                showLlmSelectorDialog = false
-                viewModel.changeLlmFromSettings(option)
-            },
-            onDismiss = { showLlmSelectorDialog = false }
         )
     }
 }
@@ -957,111 +917,4 @@ private fun PiperVoiceStatusCard(
             color = Color.White.copy(alpha = 0.5f)
         )
     }
-}
-
-// ── LLM selector dialog ───────────────────────────────────────────────────────
-
-@Composable
-private fun LlmSelectorDialog(
-    detector: DeviceCapabilityDetector,
-    currentLlmId: String,
-    onSelect: (LlmOption) -> Unit,
-    onDismiss: () -> Unit
-) {
-    val optionsWithCompat = remember { detector.allOptionsWithCompatibility() }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Color(0xFF1A2035),
-        title = {
-            Text(
-                "Choose AI Model",
-                color = Color.White,
-                fontWeight = FontWeight.Bold
-            )
-        },
-        text = {
-            androidx.compose.foundation.lazy.LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                itemsSimple(optionsWithCompat) { (option, compat) ->
-                    val isSelected = option.id == currentLlmId
-                    val compatColor = when {
-                        compat.score >= 85 -> Color(0xFF4CAF50)
-                        compat.score >= 70 -> Color(0xFF8BC34A)
-                        compat.score >= 50 -> Color(0xFFFFC107)
-                        else -> Color(0xFFF44336)
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(
-                                if (isSelected) NeonPurple.copy(alpha = 0.15f) else GlassCard
-                            )
-                            .border(
-                                1.dp,
-                                if (isSelected) NeonCyan else GlassBorder,
-                                RoundedCornerShape(10.dp)
-                            )
-                            .clickable { onSelect(option) }
-                            .padding(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Text(
-                                    option.name,
-                                    color = Color.White,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 14.sp
-                                )
-                                if (compat.isRecommended) {
-                                    Text(
-                                        "Recommended",
-                                        color = NeonCyan,
-                                        fontSize = 10.sp,
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(4.dp))
-                                            .background(NeonCyan.copy(alpha = 0.12f))
-                                            .padding(horizontal = 4.dp, vertical = 1.dp)
-                                    )
-                                }
-                            }
-                            Text(
-                                "${option.sizeLabel} · ${compat.label}",
-                                color = compatColor,
-                                fontSize = 11.sp
-                            )
-                        }
-                        if (isSelected) {
-                            Icon(
-                                Icons.Filled.CheckCircle,
-                                contentDescription = "Current",
-                                tint = NeonCyan,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel", color = Color.White.copy(alpha = 0.6f))
-            }
-        }
-    )
-}
-
-private fun <T> LazyListScope.itemsSimple(
-    list: List<T>,
-    content: @Composable (T) -> Unit
-) {
-    items(list.size) { index -> content(list[index]) }
 }

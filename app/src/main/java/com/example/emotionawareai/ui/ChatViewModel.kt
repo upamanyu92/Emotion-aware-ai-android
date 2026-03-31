@@ -60,9 +60,7 @@ enum class ModelInstallState { IDLE, INSTALLING, SUCCESS, ERROR }
  * [LlmSetupScreen]. Only meaningful while [isLlmSetupComplete] is false.
  */
 enum class LlmSetupPhase {
-    /** User is choosing which model to download. */
-    SELECTING,
-    /** The chosen model is being downloaded. */
+    /** The pre-configured model is being downloaded in the background. */
     DOWNLOADING,
     /** Download finished; now verifying the model loads correctly. */
     VERIFYING,
@@ -255,7 +253,7 @@ class ChatViewModel @Inject constructor(
     val selectedLlmId: StateFlow<String> = _selectedLlmId.asStateFlow()
 
     /** Current phase of the initial LLM setup wizard. */
-    private val _llmSetupPhase = MutableStateFlow(LlmSetupPhase.SELECTING)
+    private val _llmSetupPhase = MutableStateFlow(LlmSetupPhase.DOWNLOADING)
     val llmSetupPhase: StateFlow<LlmSetupPhase> = _llmSetupPhase.asStateFlow()
 
     /** Human-readable error message for the setup screen, non-null only in [LlmSetupPhase.FAILED]. */
@@ -371,7 +369,18 @@ class ChatViewModel @Inject constructor(
         // Load LLM setup state
         val llmSetup = memoryManager.isLlmSetupComplete()
         _isLlmSetupComplete.update { llmSetup }
-        _selectedLlmId.update { memoryManager.getSelectedLlmId() }
+        if (llmSetup == false) {
+            // Fresh or skipped setup: lock in the pre-configured model so the download
+            // screen shows progress immediately without any user selection step.
+            val option = LlmOption.CONFIGURED_MODEL
+            _selectedLlmId.update { option.id }
+            _llmSetupPhase.update { LlmSetupPhase.DOWNLOADING }
+            viewModelScope.launch { memoryManager.setSelectedLlmId(option.id) }
+        } else {
+            _selectedLlmId.update {
+                memoryManager.getSelectedLlmId().ifBlank { LlmOption.CONFIGURED_MODEL.id }
+            }
+        }
 
         _growthAreas.update { memoryManager.getGrowthAreas() }
         _checkInFrequency.update { memoryManager.getCheckInFrequency() }
@@ -910,14 +919,15 @@ class ChatViewModel @Inject constructor(
     // ── Initial LLM setup wizard actions ─────────────────────────────────────
 
     /**
-     * Begins the initial setup flow for [option].
+     * Begins the initial setup flow.
      *
-     * For built-in models this immediately marks setup as complete.
+     * Uses [LlmOption.CONFIGURED_MODEL] by default so callers do not need to
+     * pick a model. For built-in models this immediately marks setup as complete.
      * For downloadable models this transitions to [LlmSetupPhase.DOWNLOADING]
      * and delegates to [ModelDownloader]. Completion (or failure) is delivered
      * via [llmSetupPhase] and [llmSetupError].
      */
-    fun startLlmSetup(option: LlmOption) {
+    fun startLlmSetup(option: LlmOption = LlmOption.CONFIGURED_MODEL) {
         _selectedLlmId.update { option.id }
         _llmSetupError.update { null }
         viewModelScope.launch { memoryManager.setSelectedLlmId(option.id) }
@@ -941,21 +951,18 @@ class ChatViewModel @Inject constructor(
 
     /**
      * Cancels the current download (if any), deletes any partial files, and
-     * resets the setup phase to [LlmSetupPhase.SELECTING] so the user can
-     * choose a different model.
+     * restarts the download for [LlmOption.CONFIGURED_MODEL] so the setup
+     * screen stays in [LlmSetupPhase.DOWNLOADING] with a fresh attempt.
      */
     fun retryLlmSetup() {
-        // Reset phase BEFORE cancelling the download so the download-completion
-        // observer does not enter the DOWNLOADING branch on the cancel event.
-        _llmSetupPhase.update { LlmSetupPhase.SELECTING }
+        // Set phase back to DOWNLOADING before cancelling so the download-completion
+        // observer stays in the DOWNLOADING branch when the new attempt finishes.
+        _llmSetupPhase.update { LlmSetupPhase.DOWNLOADING }
         _llmSetupError.update { null }
-        val currentOption = resolveSelectedLlmOption()
         modelDownloader.cancelDownload()
-        // Delete files inside the same coroutine so any subsequent startDownload
-        // call will find a clean state. New downloads can only start after the
-        // user explicitly picks a model on the SELECTING screen.
         viewModelScope.launch(Dispatchers.IO) {
-            modelDownloader.deleteModelFile(currentOption)
+            modelDownloader.deleteModelFile(LlmOption.CONFIGURED_MODEL)
+            modelDownloader.startDownload(LlmOption.CONFIGURED_MODEL)
         }
     }
 
@@ -1129,7 +1136,7 @@ class ChatViewModel @Inject constructor(
     /** Returns the expected on-device path for the LLM model file. */
     fun getModelFilePath(): String = responseEngine.modelFilePath()
 
-    fun getRecommendedLlmOption(): LlmOption = deviceCapabilityDetector.recommendedOption()
+    fun getRecommendedLlmOption(): LlmOption = LlmOption.CONFIGURED_MODEL
 
     /**
      * Installs a model file from [uri] (obtained via the system file picker),
@@ -1382,9 +1389,9 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    /** Returns the selected LLM option, falling back to the device recommendation when needed. */
+    /** Returns the selected LLM option, falling back to [LlmOption.CONFIGURED_MODEL] when needed. */
     private fun resolveSelectedLlmOption(): LlmOption =
-        LlmOption.fromId(_selectedLlmId.value) ?: deviceCapabilityDetector.recommendedOption()
+        LlmOption.fromId(_selectedLlmId.value) ?: LlmOption.CONFIGURED_MODEL
 
     /** Resolves a human-readable display name for a picked document [uri], when available. */
     private fun resolveDisplayName(context: Context, uri: Uri): String {
