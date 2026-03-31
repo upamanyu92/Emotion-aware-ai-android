@@ -117,6 +117,13 @@ data class LlmOption(
             modelFileName = "model.gguf"
         )
 
+        /**
+         * The single pre-configured model used for all new installations.
+         * Gemma 2B offers the best balance of quality (4/5) and download size (1.5 GB)
+         * for most Android devices.
+         */
+        val CONFIGURED_MODEL: LlmOption = GEMMA_2B
+
         /** All downloadable options (excluding built-in). */
         val DOWNLOADABLE_OPTIONS =
             listOf(SMOLLM2_135M, BITNET_2B, TINYLLAMA_1B, GEMMA_2B, PHI3_MINI, MISTRAL_7B)

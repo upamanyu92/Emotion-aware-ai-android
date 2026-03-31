@@ -164,9 +164,9 @@ class ChatViewModelLlmSetupTest {
     // ── Issue 1 tests ─────────────────────────────────────────────────────────
 
     @Test
-    fun `initial llmSetupPhase is SELECTING`() = runTest {
+    fun `initial llmSetupPhase is DOWNLOADING`() = runTest {
         advanceUntilIdle()
-        assertEquals(LlmSetupPhase.SELECTING, viewModel.llmSetupPhase.value)
+        assertEquals(LlmSetupPhase.DOWNLOADING, viewModel.llmSetupPhase.value)
     }
 
     @Test
@@ -248,7 +248,7 @@ class ChatViewModelLlmSetupTest {
     }
 
     @Test
-    fun `retryLlmSetup cancels download and resets to SELECTING`() = runTest {
+    fun `retryLlmSetup cancels download and stays in DOWNLOADING to restart`() = runTest {
         advanceUntilIdle()
 
         viewModel.startLlmSetup(LlmOption.SMOLLM2_135M)
@@ -257,7 +257,7 @@ class ChatViewModelLlmSetupTest {
         viewModel.retryLlmSetup()
         advanceUntilIdle()
 
-        assertEquals(LlmSetupPhase.SELECTING, viewModel.llmSetupPhase.value)
+        assertEquals(LlmSetupPhase.DOWNLOADING, viewModel.llmSetupPhase.value)
         assertNull(viewModel.llmSetupError.value)
         verify(atLeast = 1) { modelDownloader.cancelDownload() }
     }
