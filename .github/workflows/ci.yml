@@ -49,6 +49,7 @@ jobs:
           echo "::notice::Building debug APK (SHA ${{ github.sha }})"
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
+            -e HUGGING_FACE_KEY="${{ secrets.HUGGING_FACE_KEY }}" \
             -e LANGFUSE_SECRET_KEY="${{ secrets.LANGFUSE_SECRET_KEY }}" \
             -e LANGFUSE_PUBLIC_KEY="${{ secrets.LANGFUSE_PUBLIC_KEY }}" \
             -e LANGFUSE_BASE_URL="${{ secrets.LANGFUSE_BASE_URL }}" \
@@ -62,6 +63,7 @@ jobs:
           echo "::notice::Running unit tests"
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
+            -e HUGGING_FACE_KEY="${{ secrets.HUGGING_FACE_KEY }}" \
             -e LANGFUSE_SECRET_KEY="${{ secrets.LANGFUSE_SECRET_KEY }}" \
             -e LANGFUSE_PUBLIC_KEY="${{ secrets.LANGFUSE_PUBLIC_KEY }}" \
             -e LANGFUSE_BASE_URL="${{ secrets.LANGFUSE_BASE_URL }}" \

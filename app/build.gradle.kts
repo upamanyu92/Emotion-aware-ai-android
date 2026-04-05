@@ -230,6 +230,9 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.gson)
 
+    // Secure token storage (Android Keystore + EncryptedSharedPreferences)
+    implementation(libs.androidx.security.crypto)
+
     // Testing
     testImplementation(libs.junit)
     testImplementation(libs.mockk)

@@ -276,6 +276,10 @@ class ChatViewModel @Inject constructor(
      */
     val isModelDownloadFailed: StateFlow<Boolean> = modelDownloader.downloadFailed
 
+    /** The HuggingFace access token currently saved, or blank if none is configured. */
+    private val _huggingFaceToken = MutableStateFlow("")
+    val huggingFaceToken: StateFlow<String> = _huggingFaceToken.asStateFlow()
+
     private var generationJob: Job? = null
     private var messageIdCounter = 0L
     private var speechCaptionTurnId = 0L
@@ -430,6 +434,13 @@ class ChatViewModel @Inject constructor(
             _selectedLlmId.update {
                 memoryManager.getSelectedLlmId().ifBlank { LlmOption.CONFIGURED_MODEL.id }
             }
+        }
+
+        // Restore HuggingFace token so the downloader can use it immediately.
+        val savedToken = memoryManager.getHuggingFaceToken()
+        _huggingFaceToken.update { savedToken }
+        if (savedToken.isNotBlank()) {
+            modelDownloader.setHuggingFaceToken(savedToken)
         }
 
         _growthAreas.update { memoryManager.getGrowthAreas() }
@@ -1324,6 +1335,29 @@ class ChatViewModel @Inject constructor(
     /** Cancels an in-progress BitNet model download. */
     fun cancelModelDownload() {
         modelDownloader.cancelDownload()
+    }
+
+    /**
+     * Saves the HuggingFace access token, forwards it to [ModelDownloader], and
+     * optionally retries a failed download so the user does not need to tap Retry
+     * separately after entering their token.
+     *
+     * Obtain a token at: https://huggingface.co/settings/tokens
+     * Then accept the model licence on the model's HuggingFace page.
+     */
+    fun setHuggingFaceToken(token: String) {
+        val trimmed = token.trim()
+        _huggingFaceToken.update { trimmed }
+        modelDownloader.setHuggingFaceToken(trimmed)
+        // SecureTokenStorage is synchronous (no suspend), so no coroutine needed here.
+        memoryManager.setHuggingFaceToken(trimmed)
+        // Auto-retry if the model isn't downloaded yet (likely failed due to missing token)
+        if (trimmed.isNotBlank() && !modelDownloader.isDownloading.value && !_isModelLoaded.value) {
+            val option = resolveSelectedLlmOption()
+            if (!option.isBuiltIn) {
+                modelDownloader.startDownload(option)
+            }
+        }
     }
 
     fun cancelGeneration() {

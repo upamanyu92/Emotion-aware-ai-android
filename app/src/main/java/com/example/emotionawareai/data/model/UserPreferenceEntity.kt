@@ -51,5 +51,7 @@ data class UserPreferenceEntity(
         const val KEY_LLM_SETUP_COMPLETE = "llm_setup_complete"
         /** ID of the selected LLM option (matches [LlmOption.id]). */
         const val KEY_SELECTED_LLM_ID = "selected_llm_id"
+        // NOTE: The HuggingFace access token is NOT stored here.
+        // It is kept in SecureTokenStorage (EncryptedSharedPreferences + Android Keystore).
     }
 }

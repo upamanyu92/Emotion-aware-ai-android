@@ -28,6 +28,7 @@ sherpaOnnx = "8.2.0"
 commonsCompress = "1.28.0"
 okhttp = "4.12.0"
 gson = "2.11.0"
+security-crypto = "1.0.0"
 
 [libraries]
 # AndroidX Core
@@ -88,6 +89,9 @@ commons-compress = { group = "org.apache.commons", name = "commons-compress", ve
 # Langfuse tracing
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
+
+# Secure credential storage (Android Keystore-backed EncryptedSharedPreferences)
+androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "security-crypto" }
 
 # Testing
 junit = { group = "junit", name = "junit", version.ref = "junitVersion" }

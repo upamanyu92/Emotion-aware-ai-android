@@ -12,6 +12,7 @@ import com.example.emotionawareai.domain.model.PiperVoice
 import com.example.emotionawareai.domain.model.TtsBackend
 import com.example.emotionawareai.domain.model.TtsVoiceProfile
 import com.example.emotionawareai.domain.repository.ConversationRepository
+import com.example.emotionawareai.security.SecureTokenStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
@@ -30,7 +31,8 @@ import javax.inject.Singleton
 @Singleton
 class MemoryManager @Inject constructor(
     private val repository: ConversationRepository,
-    private val sessionGoalDao: SessionGoalDao
+    private val sessionGoalDao: SessionGoalDao,
+    private val secureTokenStorage: SecureTokenStorage
 ) {
     /**
      * Retrieves the [limit] most recent [ChatMessage]s for [conversationId],
@@ -319,6 +321,22 @@ class MemoryManager @Inject constructor(
         Log.i(TAG, "setSelectedLlmId: $id")
         savePreference(UserPreferenceEntity.KEY_SELECTED_LLM_ID, id)
     }
+
+    // ── HuggingFace token helpers ──────────────────────────────────────────────
+    // The token is NOT stored in Room. It lives in EncryptedSharedPreferences
+    // (Android Keystore-backed AES-256-GCM) via SecureTokenStorage.
+
+    /**
+     * Returns the saved HuggingFace access token from encrypted storage,
+     * or an empty string if none has been set.
+     */
+    fun getHuggingFaceToken(): String = secureTokenStorage.getHuggingFaceToken()
+
+    /**
+     * Saves the HuggingFace access token to encrypted storage.
+     * Pass an empty string to clear it.
+     */
+    fun setHuggingFaceToken(token: String) = secureTokenStorage.setHuggingFaceToken(token)
 
     suspend fun getLastCheckInDate(): String =
         getPreference(UserPreferenceEntity.KEY_LAST_CHECKIN_DATE, "")

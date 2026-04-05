@@ -41,6 +41,23 @@ class ModelDownloader @Inject constructor(
     @Volatile private var downloadJob: Job? = null
     @Volatile private var activeOption: LlmOption? = null
 
+    /**
+     * Optional HuggingFace access token.
+     * Set this via [setHuggingFaceToken] before starting a download of a gated
+     * model (e.g. Gemma 2B). The token is sent as `Authorization: Bearer <token>`
+     * on every HTTP request including redirect hops.
+     */
+    @Volatile private var hfToken: String = ""
+
+    /**
+     * Updates the HuggingFace access token used for authenticated downloads.
+     * Safe to call at any time; takes effect on the next download attempt.
+     */
+    fun setHuggingFaceToken(token: String) {
+        hfToken = token.trim()
+        Log.i(TAG, "HuggingFace token ${if (hfToken.isBlank()) "cleared" else "set (${hfToken.length} chars)"}")
+    }
+
     private val _isDownloading = MutableStateFlow(false)
     /** `true` while the selected model is being fetched from the network. */
     val isDownloading: StateFlow<Boolean> = _isDownloading.asStateFlow()
@@ -198,6 +215,12 @@ class ModelDownloader @Inject constructor(
                 conn.instanceFollowRedirects = false
                 conn.requestMethod = "GET"
                 conn.setRequestProperty("User-Agent", "EmotionAwareAI/1.0 (Android)")
+                // Attach HuggingFace token when available — required for gated models
+                // (e.g. Gemma 2B requires accepting a licence on huggingface.co/settings/tokens)
+                val token = hfToken
+                if (token.isNotBlank()) {
+                    conn.setRequestProperty("Authorization", "Bearer $token")
+                }
                 connection = conn
 
                 try {
@@ -218,9 +241,19 @@ class ModelDownloader @Inject constructor(
                     } else if (code == HttpURLConnection.HTTP_OK) {
                         break
                     } else {
-                        Log.e(TAG, "HTTP $code downloading ${option.name} from $currentUrl")
+                        val reason = when (code) {
+                            401 -> "Unauthorized — HuggingFace token missing or invalid. " +
+                                   "Add your token in Settings → AI Model."
+                            403 -> "Forbidden — you may need to accept the model licence at " +
+                                   "huggingface.co, then re-enter your token."
+                            404 -> "Model file not found at the configured URL (HTTP 404). " +
+                                   "The model may have moved — try a different model."
+                            in 500..599 -> "HuggingFace server error (HTTP $code). Try again later."
+                            else -> "Unexpected HTTP $code from HuggingFace."
+                        }
+                        Log.e(TAG, "HTTP $code downloading ${option.name} from $currentUrl: $reason")
                         conn.errorStream?.bufferedReader()?.use { reader ->
-                            Log.e(TAG, "Error response body: ${reader.readText().take(500)}")
+                            Log.e(TAG, "Error body: ${reader.readText().take(500)}")
                         }
                         return@withContext false
                     }

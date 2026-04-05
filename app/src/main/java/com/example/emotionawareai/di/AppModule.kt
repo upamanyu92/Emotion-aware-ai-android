@@ -25,6 +25,7 @@ import com.example.emotionawareai.manager.ConversationManager
 import com.example.emotionawareai.manager.InsightsGenerator
 import com.example.emotionawareai.manager.MemoryManager
 import com.example.emotionawareai.manager.ResponseEngine
+import com.example.emotionawareai.security.SecureTokenStorage
 import com.example.emotionawareai.tts.PiperVoiceManager
 import com.example.emotionawareai.tts.SherpaOnnxTtsBackend
 import com.example.emotionawareai.tts.SystemTtsBackend
@@ -157,10 +158,17 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideSecureTokenStorage(
+        @ApplicationContext context: Context
+    ): SecureTokenStorage = SecureTokenStorage(context)
+
+    @Provides
+    @Singleton
     fun provideMemoryManager(
         repository: ConversationRepository,
-        sessionGoalDao: SessionGoalDao
-    ): MemoryManager = MemoryManager(repository, sessionGoalDao)
+        sessionGoalDao: SessionGoalDao,
+        secureTokenStorage: SecureTokenStorage
+    ): MemoryManager = MemoryManager(repository, sessionGoalDao, secureTokenStorage)
 
     @Provides
     @Singleton

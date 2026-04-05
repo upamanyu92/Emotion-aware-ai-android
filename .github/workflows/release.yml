@@ -86,6 +86,7 @@ jobs:
           echo "::notice::Running unit tests before release build"
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
+            -e HUGGING_FACE_KEY="${{ secrets.HUGGING_FACE_KEY }}" \
             -e LANGFUSE_SECRET_KEY="${{ secrets.LANGFUSE_SECRET_KEY }}" \
             -e LANGFUSE_PUBLIC_KEY="${{ secrets.LANGFUSE_PUBLIC_KEY }}" \
             -e LANGFUSE_BASE_URL="${{ secrets.LANGFUSE_BASE_URL }}" \
@@ -112,6 +113,7 @@ jobs:
             -e KEY_ALIAS="${{ secrets.KEY_ALIAS }}" \
             -e KEY_PASSWORD="${{ secrets.KEY_PASSWORD }}" \
             -e KEYSTORE_TYPE="${{ env.KEYSTORE_TYPE }}" \
+            -e HUGGING_FACE_KEY="${{ secrets.HUGGING_FACE_KEY }}" \
             -e LANGFUSE_SECRET_KEY="${{ secrets.LANGFUSE_SECRET_KEY }}" \
             -e LANGFUSE_PUBLIC_KEY="${{ secrets.LANGFUSE_PUBLIC_KEY }}" \
             -e LANGFUSE_BASE_URL="${{ secrets.LANGFUSE_BASE_URL }}" \

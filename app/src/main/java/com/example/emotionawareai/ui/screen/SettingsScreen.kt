@@ -22,6 +22,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.material.icons.filled.Camera
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ClosedCaption
@@ -107,6 +114,7 @@ fun SettingsScreen(viewModel: ChatViewModel) {
     val isModelDownloading by viewModel.isModelDownloading.collectAsStateWithLifecycle()
     val modelDownloadProgress by viewModel.modelDownloadProgress.collectAsStateWithLifecycle()
     val isModelDownloadFailed by viewModel.isModelDownloadFailed.collectAsStateWithLifecycle()
+    val huggingFaceToken by viewModel.huggingFaceToken.collectAsStateWithLifecycle()
     val activity = LocalContext.current as? Activity
     val context = LocalContext.current
 
@@ -402,13 +410,21 @@ fun SettingsScreen(viewModel: ChatViewModel) {
                                     )
                                     Spacer(Modifier.size(8.dp))
                                     Text(
-                                        if (isModelAvailable) "Replace model file" else "Load from file (.gguf)",
+                                         if (isModelAvailable) "Replace model file" else "Load from file (.gguf)",
                                         color = Color.White
                                     )
                                 }
                             }
                         }
                     }
+                }
+
+                // ── HuggingFace Token ─────────────────────────────────────────────────
+                item {
+                    HuggingFaceTokenCard(
+                        savedToken = huggingFaceToken,
+                        onSave = { token -> viewModel.setHuggingFaceToken(token) }
+                    )
                 }
 
                 item {
@@ -918,3 +934,151 @@ private fun PiperVoiceStatusCard(
         )
     }
 }
+
+// ── HuggingFace Token Card ────────────────────────────────────────────────────
+
+/**
+ * A settings card that lets the user enter and save their HuggingFace access
+ * token. Required for downloading gated models (e.g. Gemma 2B, Phi-3 Mini).
+ *
+ * How to get a token:
+ *  1. Sign up at huggingface.co
+ *  2. Go to huggingface.co/settings/tokens → New token (Read access is enough)
+ *  3. Accept the model licence on the model's HuggingFace page
+ *  4. Paste the token here and tap Save
+ */
+@Composable
+private fun HuggingFaceTokenCard(
+    savedToken: String,
+    onSave: (String) -> Unit
+) {
+    var draftToken by remember(savedToken) { mutableStateOf(savedToken) }
+    var tokenVisible by remember { mutableStateOf(false) }
+    val isDirty = draftToken.trim() != savedToken.trim()
+    val isSaved = savedToken.isNotBlank() && !isDirty
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(GlassCard)
+            .border(
+                width = 1.dp,
+                color = if (isSaved) NeonCyan.copy(alpha = 0.4f) else GlassBorder,
+                shape = RoundedCornerShape(16.dp)
+            )
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Key,
+                contentDescription = null,
+                tint = if (isSaved) NeonCyan else NeonPurple,
+                modifier = Modifier.size(20.dp)
+            )
+            Text(
+                "HuggingFace Access Token",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = Color.White
+            )
+            if (isSaved) {
+                Spacer(Modifier.weight(1f))
+                Icon(
+                    imageVector = Icons.Filled.CheckCircle,
+                    contentDescription = "Token saved",
+                    tint = NeonCyan,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+
+        Text(
+            text = "Required for gated models (Gemma 2B, Phi-3 Mini, Mistral 7B). " +
+                   "Get a free Read token at huggingface.co/settings/tokens, " +
+                   "then accept the model licence on the model page.",
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White.copy(alpha = 0.55f),
+            lineHeight = 16.sp
+        )
+
+        OutlinedTextField(
+            value = draftToken,
+            onValueChange = { draftToken = it },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = {
+                Text(
+                    "hf_xxxxxxxxxxxxxxxxxxxx",
+                    color = Color.White.copy(alpha = 0.3f),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            },
+            visualTransformation = if (tokenVisible) VisualTransformation.None
+                                   else PasswordVisualTransformation(),
+            trailingIcon = {
+                Icon(
+                    imageVector = if (tokenVisible) Icons.Filled.VisibilityOff
+                                  else Icons.Filled.Visibility,
+                    contentDescription = if (tokenVisible) "Hide token" else "Show token",
+                    tint = Color.White.copy(alpha = 0.5f),
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clickable { tokenVisible = !tokenVisible }
+                )
+            },
+            singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White.copy(alpha = 0.9f),
+                focusedBorderColor = NeonCyan,
+                unfocusedBorderColor = GlassBorder,
+                cursorColor = NeonCyan
+            ),
+            shape = RoundedCornerShape(10.dp),
+            textStyle = MaterialTheme.typography.bodySmall
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            if (savedToken.isNotBlank()) {
+                Button(
+                    onClick = {
+                        draftToken = ""
+                        onSave("")
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = NeonRose.copy(alpha = 0.2f)
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Clear", color = NeonRose, fontSize = 13.sp)
+                }
+            }
+            Button(
+                onClick = { onSave(draftToken) },
+                enabled = isDirty && draftToken.isNotBlank(),
+                modifier = Modifier.weight(2f),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = NeonCyan.copy(alpha = 0.25f),
+                    disabledContainerColor = NeonCyan.copy(alpha = 0.08f)
+                ),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text(
+                    "Save & Download",
+                    color = if (isDirty && draftToken.isNotBlank()) NeonCyan
+                            else Color.White.copy(alpha = 0.3f),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+    }
+}
+

@@ -30,8 +30,14 @@ class EmotionAwareApp : Application() {
         Log.i(TAG, "EmotionAwareAI application starting")
 
         appScope.launch {
+            // Restore the saved HuggingFace token so gated model downloads (e.g. Gemma 2B)
+            // can authenticate automatically without user interaction on subsequent launches.
+            val savedToken = memoryManager.getHuggingFaceToken()
+            if (savedToken.isNotBlank()) {
+                modelDownloader.setHuggingFaceToken(savedToken)
+            }
             // Use the saved selection (for returning users) or the pre-configured model
-            // (GEMMA_2B) for new installs. Never fall back to device-specific detection.
+            // (SMOLLM2_135M) for new installs. Never fall back to device-specific detection.
             val selectedOption = LlmOption.fromId(memoryManager.getSelectedLlmId())
                 ?: LlmOption.CONFIGURED_MODEL
             modelDownloader.startDownloadIfAbsent(selectedOption)
