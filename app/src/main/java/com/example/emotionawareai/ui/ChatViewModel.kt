@@ -1633,7 +1633,7 @@ class ChatViewModel @Inject constructor(
                     com.example.emotionawareai.domain.model.ConversationContext(
                         conversationId = -1,
                         userMessage = allText,
-                        emotion = _effectiveEmotion.value,
+                        detectedEmotion = _effectiveEmotion.value,
                         recentHistory = emptyList(),
                         retrievedMemories = emptyList()
                     )
