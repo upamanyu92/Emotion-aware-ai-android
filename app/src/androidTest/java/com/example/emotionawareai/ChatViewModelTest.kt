@@ -61,6 +61,10 @@ class ChatViewModelTest {
     private lateinit var modelDownloader: ModelDownloader
     private lateinit var piperVoiceManager: PiperVoiceManager
     private lateinit var deviceCapabilityDetector: DeviceCapabilityDetector
+    private lateinit var aiEvaluationEngine: com.example.emotionawareai.evaluation.AIEvaluationEngine
+    private lateinit var langfuseTraceManager: com.example.emotionawareai.evaluation.LangfuseTraceManager
+    private lateinit var diaryEntryDao: com.example.emotionawareai.data.database.DiaryEntryDao
+    private lateinit var feedbackDao: com.example.emotionawareai.data.database.FeedbackDao
     private lateinit var viewModel: ChatViewModel
 
     private val emotionSharedFlow = MutableSharedFlow<Emotion>(replay = 1)
@@ -90,6 +94,10 @@ class ChatViewModelTest {
         modelDownloader     = mockk(relaxed = true)
         piperVoiceManager   = mockk(relaxed = true)
         deviceCapabilityDetector = mockk(relaxed = true)
+        aiEvaluationEngine  = mockk(relaxed = true)
+        langfuseTraceManager = mockk(relaxed = true)
+        diaryEntryDao       = mockk(relaxed = true)
+        feedbackDao         = mockk(relaxed = true)
 
         coEvery { conversationManager.ensureConversation() } returns 1L
         coEvery { conversationManager.getActiveConversationId() } returns 1L
@@ -147,7 +155,11 @@ class ChatViewModelTest {
             insightsGenerator   = insightsGenerator,
             modelDownloader     = modelDownloader,
             piperVoiceManager   = piperVoiceManager,
-            deviceCapabilityDetector = deviceCapabilityDetector
+            deviceCapabilityDetector = deviceCapabilityDetector,
+            aiEvaluationEngine  = aiEvaluationEngine,
+            langfuseTraceManager = langfuseTraceManager,
+            diaryEntryDao       = diaryEntryDao,
+            feedbackDao         = feedbackDao
         )
     }
 

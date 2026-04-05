@@ -73,6 +73,10 @@ class ChatViewModelLlmSetupTest {
     private lateinit var modelDownloader: ModelDownloader
     private lateinit var piperVoiceManager: PiperVoiceManager
     private lateinit var deviceCapabilityDetector: DeviceCapabilityDetector
+    private lateinit var aiEvaluationEngine: com.example.emotionawareai.evaluation.AIEvaluationEngine
+    private lateinit var langfuseTraceManager: com.example.emotionawareai.evaluation.LangfuseTraceManager
+    private lateinit var diaryEntryDao: com.example.emotionawareai.data.database.DiaryEntryDao
+    private lateinit var feedbackDao: com.example.emotionawareai.data.database.FeedbackDao
 
     private val downloadingFlow = MutableStateFlow(false)
     private val downloadFailedFlow = MutableStateFlow(false)
@@ -98,6 +102,10 @@ class ChatViewModelLlmSetupTest {
         modelDownloader = mockk(relaxed = true)
         piperVoiceManager = mockk(relaxed = true)
         deviceCapabilityDetector = mockk(relaxed = true)
+        aiEvaluationEngine = mockk(relaxed = true)
+        langfuseTraceManager = mockk(relaxed = true)
+        diaryEntryDao = mockk(relaxed = true)
+        feedbackDao = mockk(relaxed = true)
 
         coEvery { insightsGenerator.getLatestInsight() } returns null
         every { insightsGenerator.observeInsights() } returns flowOf(emptyList())
@@ -424,6 +432,10 @@ class ChatViewModelLlmSetupTest {
         insightsGenerator = insightsGenerator,
         modelDownloader = modelDownloader,
         piperVoiceManager = piperVoiceManager,
-        deviceCapabilityDetector = deviceCapabilityDetector
+        deviceCapabilityDetector = deviceCapabilityDetector,
+        aiEvaluationEngine = aiEvaluationEngine,
+        langfuseTraceManager = langfuseTraceManager,
+        diaryEntryDao = diaryEntryDao,
+        feedbackDao = feedbackDao
     )
 }

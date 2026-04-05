@@ -48,13 +48,17 @@ class EmotionAwareApp : Application() {
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         when (level) {
-            TRIM_MEMORY_RUNNING_CRITICAL,
-            TRIM_MEMORY_COMPLETE -> Log.w(TAG, "Critical memory trim level=$level")
+            TRIM_LEVEL_RUNNING_CRITICAL,
+            TRIM_LEVEL_COMPLETE -> Log.w(TAG, "Critical memory trim level=$level")
             else -> Log.d(TAG, "Memory trim level=$level")
         }
     }
 
     companion object {
         private const val TAG = "EmotionAwareApp"
+        // ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL / TRIM_MEMORY_COMPLETE were
+        // deprecated in API 35 without a direct replacement; use the raw integer values.
+        private const val TRIM_LEVEL_RUNNING_CRITICAL = 15
+        private const val TRIM_LEVEL_COMPLETE = 80
     }
 }

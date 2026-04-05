@@ -4,6 +4,9 @@ import android.content.Context
 import androidx.room.Room
 import com.example.emotionawareai.data.database.AppDatabase
 import com.example.emotionawareai.data.database.ConversationDao
+import com.example.emotionawareai.data.database.DiaryEntryDao
+import com.example.emotionawareai.data.database.EvaluationDao
+import com.example.emotionawareai.data.database.FeedbackDao
 import com.example.emotionawareai.data.database.MemoryFragmentDao
 import com.example.emotionawareai.data.database.MoodCheckInDao
 import com.example.emotionawareai.data.database.SessionGoalDao
@@ -16,6 +19,8 @@ import com.example.emotionawareai.engine.ActivityAnalyzer
 import com.example.emotionawareai.engine.DeviceCapabilityDetector
 import com.example.emotionawareai.engine.EmotionDetector
 import com.example.emotionawareai.engine.LLMEngine
+import com.example.emotionawareai.evaluation.AIEvaluationEngine
+import com.example.emotionawareai.evaluation.LangfuseTraceManager
 import com.example.emotionawareai.manager.ConversationManager
 import com.example.emotionawareai.manager.InsightsGenerator
 import com.example.emotionawareai.manager.MemoryManager
@@ -44,7 +49,11 @@ object AppModule {
         AppDatabase::class.java,
         AppDatabase.DATABASE_NAME
     )
-        .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
+        .addMigrations(
+            AppDatabase.MIGRATION_1_2,
+            AppDatabase.MIGRATION_2_3,
+            AppDatabase.MIGRATION_3_4
+        )
         .fallbackToDestructiveMigration()
         .build()
 
@@ -77,6 +86,21 @@ object AppModule {
     @Singleton
     fun provideSessionGoalDao(db: AppDatabase): SessionGoalDao =
         db.sessionGoalDao()
+
+    @Provides
+    @Singleton
+    fun provideEvaluationDao(db: AppDatabase): EvaluationDao =
+        db.evaluationDao()
+
+    @Provides
+    @Singleton
+    fun provideDiaryEntryDao(db: AppDatabase): DiaryEntryDao =
+        db.diaryEntryDao()
+
+    @Provides
+    @Singleton
+    fun provideFeedbackDao(db: AppDatabase): FeedbackDao =
+        db.feedbackDao()
 
     @Provides
     @Singleton
@@ -152,4 +176,15 @@ object AppModule {
     fun provideDeviceCapabilityDetector(
         @ApplicationContext context: Context
     ): DeviceCapabilityDetector = DeviceCapabilityDetector(context)
+
+    @Provides
+    @Singleton
+    fun provideLangfuseTraceManager(): LangfuseTraceManager = LangfuseTraceManager()
+
+    @Provides
+    @Singleton
+    fun provideAIEvaluationEngine(
+        evaluationDao: EvaluationDao,
+        langfuseTraceManager: LangfuseTraceManager
+    ): AIEvaluationEngine = AIEvaluationEngine(evaluationDao, langfuseTraceManager)
 }

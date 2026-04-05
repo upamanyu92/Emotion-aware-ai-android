@@ -33,6 +33,14 @@ android {
         buildConfigField("String", "BILLING_INAPP_PREMIUM_SKU", "\"$inAppPremiumSku\"")
         buildConfigField("String", "BILLING_SUBS_MONTHLY_SKU", "\"$monthlyPremiumSku\"")
 
+        // Langfuse AI Tracing keys – populated from GitHub Secrets during CI builds
+        val langfuseSecretKey = System.getenv("LANGFUSE_SECRET_KEY") ?: ""
+        val langfusePublicKey = System.getenv("LANGFUSE_PUBLIC_KEY") ?: ""
+        val langfuseBaseUrl = System.getenv("LANGFUSE_BASE_URL") ?: "https://cloud.langfuse.com"
+        buildConfigField("String", "LANGFUSE_SECRET_KEY", "\"$langfuseSecretKey\"")
+        buildConfigField("String", "LANGFUSE_PUBLIC_KEY", "\"$langfusePublicKey\"")
+        buildConfigField("String", "LANGFUSE_BASE_URL", "\"$langfuseBaseUrl\"")
+
         externalNativeBuild {
             cmake {
                 cppFlags += listOf("-std=c++17", "-O3", "-DANDROID")
@@ -141,13 +149,16 @@ android {
 // versionCode increments within each ABI bucket.
 // Also renames every APK output to: moodmitraAI-{buildType}-{abi-}{versionName}.apk
 val abiVersionCode = mapOf("arm64-v8a" to 2, "x86_64" to 1)
-android.applicationVariants.configureEach {
+// The outer lambda is labelled `variant@` so that the inner `return@configureEach`
+// unambiguously refers to the inner closure (avoids "duplicate label" Kotlin warning).
+android.applicationVariants.configureEach variant@{
     val buildTypeName = buildType.name          // "debug" or "release"
     val fullVersion   = versionName             // includes versionNameSuffix, e.g. "1.0.0-alpha"
     outputs.configureEach {
         val output = this as? com.android.build.gradle.internal.api.ApkVariantOutputImpl
             ?: return@configureEach
-        val abi = output.getFilter(com.android.build.OutputFile.ABI)
+        // Use the string literal "ABI" directly to avoid the deprecated OutputFile.ABI constant.
+        val abi = output.getFilter("ABI")
         if (abi != null) {
             output.versionCodeOverride =
                 (abiVersionCode[abi] ?: 0) * 1000 + android.defaultConfig.versionCode!!
@@ -156,6 +167,12 @@ android.applicationVariants.configureEach {
         val abiSuffix = if (abi != null) "-$abi" else ""
         output.outputFileName = "moodmitraAI-$buildTypeName$abiSuffix-$fullVersion.apk"
     }
+}
+
+// Tell Room's KSP processor where to write schema JSON files.
+// The exported schemas serve as a migration audit trail; commit them alongside code.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {
@@ -208,6 +225,10 @@ dependencies {
     // Neural TTS
     implementation(libs.sherpa.onnx)
     implementation(libs.commons.compress)
+
+    // Langfuse AI Tracing (HTTP + JSON)
+    implementation(libs.okhttp)
+    implementation(libs.gson)
 
     // Testing
     testImplementation(libs.junit)

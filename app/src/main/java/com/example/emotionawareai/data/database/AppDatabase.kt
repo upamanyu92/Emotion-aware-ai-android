@@ -5,6 +5,9 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.emotionawareai.data.model.ConversationEntity
+import com.example.emotionawareai.data.model.DiaryEntryEntity
+import com.example.emotionawareai.data.model.EvaluationEntity
+import com.example.emotionawareai.data.model.FeedbackEntity
 import com.example.emotionawareai.data.model.MemoryFragmentEntity
 import com.example.emotionawareai.data.model.MessageEntity
 import com.example.emotionawareai.data.model.MoodCheckInEntity
@@ -20,9 +23,12 @@ import com.example.emotionawareai.data.model.WeeklyInsightEntity
         MemoryFragmentEntity::class,
         WeeklyInsightEntity::class,
         MoodCheckInEntity::class,
-        SessionGoalEntity::class
+        SessionGoalEntity::class,
+        EvaluationEntity::class,
+        DiaryEntryEntity::class,
+        FeedbackEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -32,6 +38,9 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun weeklyInsightDao(): WeeklyInsightDao
     abstract fun moodCheckInDao(): MoodCheckInDao
     abstract fun sessionGoalDao(): SessionGoalDao
+    abstract fun evaluationDao(): EvaluationDao
+    abstract fun diaryEntryDao(): DiaryEntryDao
+    abstract fun feedbackDao(): FeedbackDao
 
     companion object {
         const val DATABASE_NAME = "emotion_aware_ai.db"
@@ -97,6 +106,49 @@ abstract class AppDatabase : RoomDatabase() {
                         `isActive` INTEGER NOT NULL DEFAULT 1,
                         `createdAt` INTEGER NOT NULL,
                         `lastMentionedAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        /**
+         * Adds [EvaluationEntity], [DiaryEntryEntity], and [FeedbackEntity]
+         * tables introduced in v4 for AI evaluation, diary, and user feedback.
+         */
+        val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `ai_evaluations` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `messageId` INTEGER NOT NULL,
+                        `metricName` TEXT NOT NULL,
+                        `score` REAL NOT NULL,
+                        `isUserFeedback` INTEGER NOT NULL DEFAULT 0,
+                        `timestamp` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `diary_entries` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `rawText` TEXT NOT NULL,
+                        `dateKey` TEXT NOT NULL,
+                        `dailySummary` TEXT NOT NULL DEFAULT '',
+                        `timestamp` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `user_feedback` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `messageId` INTEGER NOT NULL,
+                        `rating` INTEGER NOT NULL,
+                        `comment` TEXT NOT NULL DEFAULT '',
+                        `timestamp` INTEGER NOT NULL
                     )
                     """.trimIndent()
                 )

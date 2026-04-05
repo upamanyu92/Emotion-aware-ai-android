@@ -11,6 +11,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Opt into Node.js 24 for all JavaScript actions to silence the Node 20
+# deprecation warning that will become an error in September 2026.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   build-and-test:
     name: Build & Unit Test
@@ -44,6 +49,9 @@ jobs:
           echo "::notice::Building debug APK (SHA ${{ github.sha }})"
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
+            -e LANGFUSE_SECRET_KEY="${{ secrets.LANGFUSE_SECRET_KEY }}" \
+            -e LANGFUSE_PUBLIC_KEY="${{ secrets.LANGFUSE_PUBLIC_KEY }}" \
+            -e LANGFUSE_BASE_URL="${{ secrets.LANGFUSE_BASE_URL }}" \
             -w /workspace \
             android-builder:ci \
             bash -c "chmod +x gradlew && ./gradlew assembleDebug --stacktrace 2>&1"
@@ -54,6 +62,9 @@ jobs:
           echo "::notice::Running unit tests"
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
+            -e LANGFUSE_SECRET_KEY="${{ secrets.LANGFUSE_SECRET_KEY }}" \
+            -e LANGFUSE_PUBLIC_KEY="${{ secrets.LANGFUSE_PUBLIC_KEY }}" \
+            -e LANGFUSE_BASE_URL="${{ secrets.LANGFUSE_BASE_URL }}" \
             -w /workspace \
             android-builder:ci \
             bash -c "chmod +x gradlew && ./gradlew test --stacktrace 2>&1"

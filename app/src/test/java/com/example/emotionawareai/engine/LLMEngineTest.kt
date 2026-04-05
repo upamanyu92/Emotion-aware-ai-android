@@ -9,6 +9,7 @@ import org.junit.Before
 import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.io.File
+import kotlin.io.path.createTempDirectory
 
 /**
  * Unit tests for [ModelFileLocator].
@@ -22,7 +23,7 @@ class LLMEngineTest {
 
     @Before
     fun setUp() {
-        tempDir = createTempDir("llm_test")
+        tempDir = createTempDirectory("llm_test").toFile()
     }
 
     @After

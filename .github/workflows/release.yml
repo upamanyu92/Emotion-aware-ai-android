@@ -9,6 +9,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
+# Opt into Node.js 24 for all JavaScript actions to silence the Node 20
+# deprecation warning that will become an error in September 2026.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   release:
     name: Build & Publish AAB + APK
@@ -81,6 +86,9 @@ jobs:
           echo "::notice::Running unit tests before release build"
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
+            -e LANGFUSE_SECRET_KEY="${{ secrets.LANGFUSE_SECRET_KEY }}" \
+            -e LANGFUSE_PUBLIC_KEY="${{ secrets.LANGFUSE_PUBLIC_KEY }}" \
+            -e LANGFUSE_BASE_URL="${{ secrets.LANGFUSE_BASE_URL }}" \
             -w /workspace \
             android-builder:release \
             bash -c "chmod +x gradlew && ./gradlew test --stacktrace 2>&1"
@@ -104,6 +112,9 @@ jobs:
             -e KEY_ALIAS="${{ secrets.KEY_ALIAS }}" \
             -e KEY_PASSWORD="${{ secrets.KEY_PASSWORD }}" \
             -e KEYSTORE_TYPE="${{ env.KEYSTORE_TYPE }}" \
+            -e LANGFUSE_SECRET_KEY="${{ secrets.LANGFUSE_SECRET_KEY }}" \
+            -e LANGFUSE_PUBLIC_KEY="${{ secrets.LANGFUSE_PUBLIC_KEY }}" \
+            -e LANGFUSE_BASE_URL="${{ secrets.LANGFUSE_BASE_URL }}" \
             -w /workspace \
             android-builder:release \
             bash -c "chmod +x gradlew && ./gradlew assembleRelease bundleRelease --stacktrace 2>&1"
