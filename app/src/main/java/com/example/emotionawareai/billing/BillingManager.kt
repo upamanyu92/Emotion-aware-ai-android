@@ -11,6 +11,7 @@ import com.android.billingclient.api.BillingFlowParams
 import com.android.billingclient.api.BillingResult
 import com.android.billingclient.api.ProductDetails
 import com.android.billingclient.api.Purchase
+import com.android.billingclient.api.PendingPurchasesParams
 import com.android.billingclient.api.PurchasesUpdatedListener
 import com.android.billingclient.api.QueryProductDetailsParams
 import com.android.billingclient.api.QueryPurchasesParams
@@ -59,7 +60,9 @@ class BillingManager @Inject constructor(
 
 		billingClient = BillingClient.newBuilder(context)
 			.setListener(listener)
-			.enablePendingPurchases()
+			.enablePendingPurchases(
+				PendingPurchasesParams.newBuilder().enableOneTimeProducts().build()
+			)
 			.build()
 
 		connect()

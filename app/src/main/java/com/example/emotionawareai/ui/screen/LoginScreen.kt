@@ -1,3 +1,8 @@
+// Suppress file-level import warnings for the deprecated Google Sign-In classes.
+// The actual usages are isolated in googleSignInIntent / resolveGoogleDisplayName helpers
+// (both annotated @Suppress("DEPRECATION")); see the TODO there for the migration path.
+@file:Suppress("DEPRECATION")
+
 package com.example.emotionawareai.ui.screen
 
 import android.app.Activity
@@ -86,11 +91,36 @@ import com.example.emotionawareai.ui.theme.GradStart
 import com.example.emotionawareai.ui.theme.NeonCyan
 import com.example.emotionawareai.ui.theme.NeonGold
 import com.example.emotionawareai.ui.theme.NeonPurple
+import android.content.Intent
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 
 private val AVATAR_OPTIONS = listOf("😊", "😎", "🧘", "🎯", "💡", "🌟", "🦁", "🐼", "🚀", "🎵")
+
+// Google Sign-In (legacy API) helpers.
+// TODO: Migrate to androidx.credentials CredentialManager + GetGoogleIdOption once
+//       a Google Cloud OAuth web-client ID is available for this project.
+//       See: https://developer.android.com/identity/sign-in/legacy-gsi-migration
+@Suppress("DEPRECATION")
+private fun googleSignInIntent(context: android.content.Context): Intent {
+    val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+        .requestEmail()
+        .build()
+    return GoogleSignIn.getClient(context, gso).signInIntent
+}
+
+@Suppress("DEPRECATION")
+private fun resolveGoogleDisplayName(intent: Intent?): String? {
+    return try {
+        val account = GoogleSignIn.getSignedInAccountFromIntent(intent)
+            .getResult(ApiException::class.java)
+        account?.displayName?.ifBlank { null }
+            ?: account?.email?.substringBefore('@')
+    } catch (_: ApiException) {
+        null
+    }
+}
 
 /**
  * Onboarding / login screen shown on first launch.
@@ -124,24 +154,17 @@ fun LoginScreen(
     val haptics = LocalHapticFeedback.current
     val context = LocalContext.current
 
-    // Google Sign-In launcher
+    // Google Sign-In launcher (calls into suppress-annotated helpers above)
     val googleSignInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
-            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-            try {
-                val account = task.getResult(ApiException::class.java)
-                val displayName = account?.displayName?.ifBlank { null }
-                    ?: account?.email?.substringBefore('@')
-                    ?: "User"
-                pendingName = displayName
-                pendingAvatar = "😊"
-                onboardingStep = 1
-            } catch (_: ApiException) {
-                // Sign-in failed — fall through to local form
-                showLocalForm = true
-            }
+            val displayName = resolveGoogleDisplayName(result.data) ?: "User"
+            pendingName = displayName
+            pendingAvatar = "😊"
+            onboardingStep = 1
+        } else {
+            showLocalForm = true
         }
     }
 
@@ -260,11 +283,7 @@ fun LoginScreen(
                     OutlinedButton(
                         onClick = {
                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            val gso = GoogleSignInOptions.Builder(
-                                GoogleSignInOptions.DEFAULT_SIGN_IN
-                            ).requestEmail().build()
-                            val client = GoogleSignIn.getClient(context, gso)
-                            googleSignInLauncher.launch(client.signInIntent)
+                            googleSignInLauncher.launch(googleSignInIntent(context))
                         },
                         modifier = Modifier
                             .fillMaxWidth()

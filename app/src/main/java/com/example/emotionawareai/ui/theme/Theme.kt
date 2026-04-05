@@ -93,7 +93,12 @@ fun EmotionAwareAITheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            window.statusBarColor = Color.Transparent.toArgb()
+            // window.statusBarColor was deprecated in API 35 (edge-to-edge is enforced by default);
+            // keep the explicit transparent setting for API 30–34 where it is still honoured.
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                @Suppress("DEPRECATION")
+                window.statusBarColor = Color.Transparent.toArgb()
+            }
             WindowCompat.setDecorFitsSystemWindows(window, false)
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
         }

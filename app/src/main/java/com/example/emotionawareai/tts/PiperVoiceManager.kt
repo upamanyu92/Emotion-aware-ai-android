@@ -16,7 +16,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 import java.io.BufferedInputStream
@@ -232,7 +231,7 @@ class PiperVoiceManager @Inject constructor(
         BufferedInputStream(archive.inputStream()).use { fileInput ->
             BZip2CompressorInputStream(fileInput).use { bzIn ->
                 TarArchiveInputStream(bzIn).use { tarIn ->
-                    var entry = tarIn.nextTarEntry
+                    var entry = tarIn.nextEntry
                     while (entry != null) {
                         val target = try {
                             File(destinationDir, entry.name).canonicalFile
@@ -250,7 +249,7 @@ class PiperVoiceManager @Inject constructor(
                                 tarIn.copyTo(output)
                             }
                         }
-                        entry = tarIn.nextTarEntry
+                        entry = tarIn.nextEntry
                     }
                 }
             }

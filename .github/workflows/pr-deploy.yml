@@ -20,6 +20,11 @@ concurrency:
   group: ${{ github.workflow }}-main
   cancel-in-progress: false
 
+# Opt into Node.js 24 for all JavaScript actions to silence the Node 20
+# deprecation warning that will become an error in September 2026.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   deploy:
     name: Docker Build & Publish to Play Store

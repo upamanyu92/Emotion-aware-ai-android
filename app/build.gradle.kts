@@ -149,13 +149,16 @@ android {
 // versionCode increments within each ABI bucket.
 // Also renames every APK output to: moodmitraAI-{buildType}-{abi-}{versionName}.apk
 val abiVersionCode = mapOf("arm64-v8a" to 2, "x86_64" to 1)
-android.applicationVariants.configureEach {
+// The outer lambda is labelled `variant@` so that the inner `return@configureEach`
+// unambiguously refers to the inner closure (avoids "duplicate label" Kotlin warning).
+android.applicationVariants.configureEach variant@{
     val buildTypeName = buildType.name          // "debug" or "release"
     val fullVersion   = versionName             // includes versionNameSuffix, e.g. "1.0.0-alpha"
     outputs.configureEach {
         val output = this as? com.android.build.gradle.internal.api.ApkVariantOutputImpl
             ?: return@configureEach
-        val abi = output.getFilter(com.android.build.OutputFile.ABI)
+        // Use the string literal "ABI" directly to avoid the deprecated OutputFile.ABI constant.
+        val abi = output.getFilter("ABI")
         if (abi != null) {
             output.versionCodeOverride =
                 (abiVersionCode[abi] ?: 0) * 1000 + android.defaultConfig.versionCode!!
@@ -164,6 +167,12 @@ android.applicationVariants.configureEach {
         val abiSuffix = if (abi != null) "-$abi" else ""
         output.outputFileName = "moodmitraAI-$buildTypeName$abiSuffix-$fullVersion.apk"
     }
+}
+
+// Tell Room's KSP processor where to write schema JSON files.
+// The exported schemas serve as a migration audit trail; commit them alongside code.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {
