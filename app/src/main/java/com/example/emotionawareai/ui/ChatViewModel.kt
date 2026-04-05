@@ -16,6 +16,10 @@ import com.example.emotionawareai.domain.model.PiperVoice
 import com.example.emotionawareai.billing.BillingManager
 import com.example.emotionawareai.billing.PremiumOffer
 import com.example.emotionawareai.billing.PremiumPlanType
+import com.example.emotionawareai.data.database.DiaryEntryDao
+import com.example.emotionawareai.data.database.FeedbackDao
+import com.example.emotionawareai.data.model.DiaryEntryEntity
+import com.example.emotionawareai.data.model.FeedbackEntity
 import com.example.emotionawareai.domain.model.PremiumFeature
 import com.example.emotionawareai.engine.ActivityAnalyzer
 import com.example.emotionawareai.engine.DeviceCapabilityDetector
@@ -29,6 +33,8 @@ import com.example.emotionawareai.domain.model.SessionGoal
 import com.example.emotionawareai.domain.model.TtsBackend
 import com.example.emotionawareai.domain.model.TtsVoiceProfile
 import com.example.emotionawareai.domain.model.WeeklyInsight
+import com.example.emotionawareai.evaluation.AIEvaluationEngine
+import com.example.emotionawareai.evaluation.LangfuseTraceManager
 import com.example.emotionawareai.manager.ConversationManager
 import com.example.emotionawareai.manager.InsightsGenerator
 import com.example.emotionawareai.manager.MemoryManager
@@ -90,7 +96,11 @@ class ChatViewModel @Inject constructor(
     private val insightsGenerator: InsightsGenerator,
     private val modelDownloader: ModelDownloader,
     private val piperVoiceManager: PiperVoiceManager,
-    val deviceCapabilityDetector: DeviceCapabilityDetector
+    val deviceCapabilityDetector: DeviceCapabilityDetector,
+    private val aiEvaluationEngine: AIEvaluationEngine,
+    private val langfuseTraceManager: LangfuseTraceManager,
+    private val diaryEntryDao: DiaryEntryDao,
+    private val feedbackDao: FeedbackDao
 ) : ViewModel() {
 
     // ── UI State ─────────────────────────────────────────────────────────────
@@ -296,6 +306,44 @@ class ChatViewModel @Inject constructor(
     private val _isVoiceModeActive = MutableStateFlow(false)
     val isVoiceModeActive: StateFlow<Boolean> = _isVoiceModeActive.asStateFlow()
 
+    // ── AI Evaluation State ──────────────────────────────────────────────────
+
+    private val _evaluationScores = MutableStateFlow<Map<String, Float>>(emptyMap())
+    val evaluationScores: StateFlow<Map<String, Float>> = _evaluationScores.asStateFlow()
+
+    private val _overallEvaluationScore = MutableStateFlow(0f)
+    val overallEvaluationScore: StateFlow<Float> = _overallEvaluationScore.asStateFlow()
+
+    private val _averageFeedbackRating = MutableStateFlow(0f)
+    val averageFeedbackRating: StateFlow<Float> = _averageFeedbackRating.asStateFlow()
+
+    private val _feedbackCount = MutableStateFlow(0)
+    val feedbackCount: StateFlow<Int> = _feedbackCount.asStateFlow()
+
+    /** Currently shown feedback sheet for this message ID, null when hidden. */
+    private val _feedbackTargetMessageId = MutableStateFlow<Long?>(null)
+    val feedbackTargetMessageId: StateFlow<Long?> = _feedbackTargetMessageId.asStateFlow()
+
+    // ── Diary State ──────────────────────────────────────────────────────────
+
+    private val _isDiaryListening = MutableStateFlow(false)
+    val isDiaryListening: StateFlow<Boolean> = _isDiaryListening.asStateFlow()
+
+    private val _diaryTranscripts = MutableStateFlow<List<String>>(emptyList())
+    val diaryTranscripts: StateFlow<List<String>> = _diaryTranscripts.asStateFlow()
+
+    private val _diarySummary = MutableStateFlow("")
+    val diarySummary: StateFlow<String> = _diarySummary.asStateFlow()
+
+    private val _diaryDates = MutableStateFlow<List<String>>(emptyList())
+    val diaryDates: StateFlow<List<String>> = _diaryDates.asStateFlow()
+
+    private val _isDiarySummaryGenerating = MutableStateFlow(false)
+    val isDiarySummaryGenerating: StateFlow<Boolean> = _isDiarySummaryGenerating.asStateFlow()
+
+    /** Langfuse trace ID for the current conversation turn. */
+    private var currentTraceId: String = ""
+
     // ── Initialisation ────────────────────────────────────────────────────────
 
     init {
@@ -313,6 +361,8 @@ class ChatViewModel @Inject constructor(
             observeBillingState()
             observeSpeakingState()
             observePiperVoiceDownloads()
+            loadEvaluationData()
+            loadDiaryData()
         }
     }
 
@@ -598,6 +648,18 @@ class ChatViewModel @Inject constructor(
 
         Log.i(TAG, "sendMessage: fromVoice=$fromVoiceInput, emotion=${_effectiveEmotion.value}, length=${text.trim().length}")
 
+        // Start Langfuse trace for this conversation turn
+        currentTraceId = langfuseTraceManager.createTrace(
+            userId = _userName.value.ifBlank { "anonymous" },
+            sessionId = "conv_${conversationManager.getActiveConversationId()}",
+            input = text.trim(),
+            metadata = mapOf(
+                "emotion" to _effectiveEmotion.value.name,
+                "fromVoice" to fromVoiceInput,
+                "modelLoaded" to _isModelLoaded.value
+            )
+        )
+
         updateSpeechCaption(
             speaker = MessageRole.USER,
             text = text.trim(),
@@ -615,6 +677,8 @@ class ChatViewModel @Inject constructor(
 
         generationJob = viewModelScope.launch {
             _isGenerating.update { true }
+
+            val generationStartTime = System.currentTimeMillis()
 
             // Build context BEFORE saving the user message so that the current
             // user turn does not appear in the retrieved history (which would
@@ -662,6 +726,8 @@ class ChatViewModel @Inject constructor(
                     }
                 }
 
+            val latencyMs = System.currentTimeMillis() - generationStartTime
+
             val finalMessage = streamingMessage.copy(
                 content = fullResponse.toString().ifBlank { "I'm sorry, I couldn't generate a response." },
                 isStreaming = false
@@ -684,6 +750,28 @@ class ChatViewModel @Inject constructor(
             Log.i(TAG, "Generation complete: responseLength=${finalMessage.content.length}")
             conversationManager.saveMessage(finalMessage)
             _isGenerating.update { false }
+
+            // Record Langfuse generation and run AI evaluation
+            langfuseTraceManager.recordGeneration(
+                traceId = currentTraceId,
+                modelName = resolveSelectedLlmOption().name,
+                prompt = text.trim(),
+                completion = finalMessage.content,
+                latencyMs = latencyMs
+            )
+
+            viewModelScope.launch(Dispatchers.Default) {
+                aiEvaluationEngine.evaluateResponse(
+                    messageId = finalMessage.id,
+                    traceId = currentTraceId,
+                    userInput = text.trim(),
+                    response = finalMessage.content,
+                    latencyMs = latencyMs,
+                    emotionDetected = _currentEmotion.value != Emotion.UNKNOWN,
+                    memoryUsed = context.retrievedMemories.isNotEmpty()
+                )
+                loadEvaluationData()
+            }
 
             maybeResumeContinuousConversation(fromVoiceInput)
         }
@@ -1459,8 +1547,157 @@ class ChatViewModel @Inject constructor(
         return PremiumFeature.entries.associateWith { featuresEnabled }
     }
 
+    // ── Feedback Actions ─────────────────────────────────────────────────────
+
+    /** Shows the feedback bottom sheet for a given assistant message. */
+    fun showFeedbackSheet(messageId: Long) {
+        _feedbackTargetMessageId.update { messageId }
+    }
+
+    fun dismissFeedbackSheet() {
+        _feedbackTargetMessageId.update { null }
+    }
+
+    /** Submits user feedback for an assistant message and forwards to Langfuse. */
+    fun submitFeedback(messageId: Long, rating: Int, comment: String) {
+        _feedbackTargetMessageId.update { null }
+        viewModelScope.launch {
+            feedbackDao.insert(
+                FeedbackEntity(
+                    messageId = messageId,
+                    rating = rating,
+                    comment = comment
+                )
+            )
+            langfuseTraceManager.submitUserFeedback(
+                traceId = currentTraceId,
+                rating = rating,
+                comment = comment
+            )
+            loadFeedbackData()
+        }
+    }
+
+    // ── Diary Actions ─────────────────────────────────────────────────────────
+
+    /** Starts continuous listening for the diary; captured text is saved as diary entries. */
+    fun startDiaryListening() {
+        if (!_audioPermissionGranted.value) {
+            _errorMessage.update { "Microphone permission is required for the diary" }
+            return
+        }
+        _isDiaryListening.update { true }
+        diaryVoiceJob = viewModelScope.launch {
+            voiceProcessor.startContinuousListening()
+            voiceProcessor.recognizedTextFlow.collect { text ->
+                if (text.isNotBlank() && _isDiaryListening.value) {
+                    saveDiaryEntry(text)
+                }
+            }
+        }
+    }
+
+    fun stopDiaryListening() {
+        _isDiaryListening.update { false }
+        diaryVoiceJob?.cancel()
+        diaryVoiceJob = null
+        voiceProcessor.stopContinuousListening()
+    }
+
+    /** Generates an AI summary for today's diary entries. */
+    fun generateDiarySummary() {
+        viewModelScope.launch {
+            _isDiarySummaryGenerating.update { true }
+            val today = todayDateKey()
+            val entries = diaryEntryDao.getEntriesForDate(today)
+            if (entries.isEmpty()) {
+                _isDiarySummaryGenerating.update { false }
+                return@launch
+            }
+            val allText = entries.joinToString(separator = " ") { it.rawText }
+
+            // Use the LLM to generate a summary if the model is loaded,
+            // otherwise create a simple concatenated summary.
+            val summary = if (_isModelLoaded.value) {
+                val prompt = buildString {
+                    append("[SYSTEM] You are a helpful diary summarizer. ")
+                    append("Summarize the following transcribed speech into a clear, ")
+                    append("comprehensive daily diary entry. Capture the key events, ")
+                    append("emotions, and themes.\n\n")
+                    append("[USER] Here are my transcribed thoughts from today:\n")
+                    append(allText)
+                    append("\n\n[ASSISTANT] ")
+                }
+                val sb = StringBuilder()
+                responseEngine.generateResponse(
+                    com.example.emotionawareai.domain.model.ConversationContext(
+                        conversationId = -1,
+                        userMessage = allText,
+                        emotion = _effectiveEmotion.value,
+                        recentHistory = emptyList(),
+                        retrievedMemories = emptyList()
+                    )
+                ).collect { token -> sb.append(token) }
+                sb.toString().ifBlank { "Today you spoke about: $allText" }
+            } else {
+                "Today's diary: $allText"
+            }
+
+            diaryEntryDao.updateDailySummary(today, summary)
+            _diarySummary.update { summary }
+            _isDiarySummaryGenerating.update { false }
+        }
+    }
+
+    private fun saveDiaryEntry(text: String) {
+        viewModelScope.launch {
+            val today = todayDateKey()
+            diaryEntryDao.insert(
+                DiaryEntryEntity(
+                    rawText = text,
+                    dateKey = today
+                )
+            )
+            _diaryTranscripts.update { it + text }
+        }
+    }
+
+    private suspend fun loadEvaluationData() {
+        val weekAgo = System.currentTimeMillis() - 7 * 24 * 60 * 60 * 1000L
+        val averages = aiEvaluationEngine.getMetricAverages(weekAgo)
+        _evaluationScores.update { averages }
+        val overall = aiEvaluationEngine.getOverallScore(weekAgo)
+        _overallEvaluationScore.update { overall }
+        loadFeedbackData()
+    }
+
+    private suspend fun loadFeedbackData() {
+        val weekAgo = System.currentTimeMillis() - 7 * 24 * 60 * 60 * 1000L
+        val avg = feedbackDao.averageRatingSince(weekAgo) ?: 0f
+        _averageFeedbackRating.update { avg }
+        val count = feedbackDao.totalCount()
+        _feedbackCount.update { count }
+    }
+
+    private suspend fun loadDiaryData() {
+        val today = todayDateKey()
+        val entries = diaryEntryDao.getEntriesForDate(today)
+        _diaryTranscripts.update { entries.map { it.rawText } }
+        val summary = diaryEntryDao.getDailySummary(today) ?: ""
+        _diarySummary.update { summary }
+        val dates = diaryEntryDao.getAllDates()
+        _diaryDates.update { dates }
+    }
+
+    private fun todayDateKey(): String =
+        java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+            .format(java.util.Date())
+
+    private var diaryVoiceJob: Job? = null
+
     override fun onCleared() {
         super.onCleared()
+        diaryVoiceJob?.cancel()
         responseEngine.release()
         emotionDetector.release()
         activityAnalyzer.release()

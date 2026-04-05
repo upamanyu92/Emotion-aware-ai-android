@@ -33,6 +33,14 @@ android {
         buildConfigField("String", "BILLING_INAPP_PREMIUM_SKU", "\"$inAppPremiumSku\"")
         buildConfigField("String", "BILLING_SUBS_MONTHLY_SKU", "\"$monthlyPremiumSku\"")
 
+        // Langfuse AI Tracing keys – populated from GitHub Secrets during CI builds
+        val langfuseSecretKey = System.getenv("LANGFUSE_SECRET_KEY") ?: ""
+        val langfusePublicKey = System.getenv("LANGFUSE_PUBLIC_KEY") ?: ""
+        val langfuseBaseUrl = System.getenv("LANGFUSE_BASE_URL") ?: "https://cloud.langfuse.com"
+        buildConfigField("String", "LANGFUSE_SECRET_KEY", "\"$langfuseSecretKey\"")
+        buildConfigField("String", "LANGFUSE_PUBLIC_KEY", "\"$langfusePublicKey\"")
+        buildConfigField("String", "LANGFUSE_BASE_URL", "\"$langfuseBaseUrl\"")
+
         externalNativeBuild {
             cmake {
                 cppFlags += listOf("-std=c++17", "-O3", "-DANDROID")
@@ -208,6 +216,10 @@ dependencies {
     // Neural TTS
     implementation(libs.sherpa.onnx)
     implementation(libs.commons.compress)
+
+    // Langfuse AI Tracing (HTTP + JSON)
+    implementation(libs.okhttp)
+    implementation(libs.gson)
 
     // Testing
     testImplementation(libs.junit)
