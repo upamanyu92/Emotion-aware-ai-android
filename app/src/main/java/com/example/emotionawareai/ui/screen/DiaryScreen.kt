@@ -190,19 +190,6 @@ fun DiaryScreen(viewModel: ChatViewModel) {
                 }
             }
 
-            // ── Past Diary Dates ─────────────────────────────────────
-            if (diaryDates.size > 1) {
-                item {
-                    Text(
-                        text = "Past Entries",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = NeonPurple,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                }
-            }
-
             // ── Today's Transcripts ─────────────────────────────────
             item {
                 if (diaryTranscripts.isNotEmpty()) {

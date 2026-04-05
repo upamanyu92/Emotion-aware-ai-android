@@ -648,8 +648,8 @@ class ChatViewModel @Inject constructor(
 
         Log.i(TAG, "sendMessage: fromVoice=$fromVoiceInput, emotion=${_effectiveEmotion.value}, length=${text.trim().length}")
 
-        // Start Langfuse trace for this conversation turn
-        currentTraceId = langfuseTraceManager.createTrace(
+        // Start Langfuse trace for this conversation turn (local to this invocation)
+        val traceId = langfuseTraceManager.createTrace(
             userId = _userName.value.ifBlank { "anonymous" },
             sessionId = "conv_${conversationManager.getActiveConversationId()}",
             input = text.trim(),
@@ -659,6 +659,7 @@ class ChatViewModel @Inject constructor(
                 "modelLoaded" to _isModelLoaded.value
             )
         )
+        currentTraceId = traceId
 
         updateSpeechCaption(
             speaker = MessageRole.USER,
@@ -753,7 +754,7 @@ class ChatViewModel @Inject constructor(
 
             // Record Langfuse generation and run AI evaluation
             langfuseTraceManager.recordGeneration(
-                traceId = currentTraceId,
+                traceId = traceId,
                 modelName = resolveSelectedLlmOption().name,
                 prompt = text.trim(),
                 completion = finalMessage.content,
@@ -763,7 +764,7 @@ class ChatViewModel @Inject constructor(
             viewModelScope.launch(Dispatchers.Default) {
                 aiEvaluationEngine.evaluateResponse(
                     messageId = finalMessage.id,
-                    traceId = currentTraceId,
+                    traceId = traceId,
                     userInput = text.trim(),
                     response = finalMessage.content,
                     latencyMs = latencyMs,
@@ -1588,7 +1589,14 @@ class ChatViewModel @Inject constructor(
         }
         _isDiaryListening.update { true }
         diaryVoiceJob = viewModelScope.launch {
-            voiceProcessor.startContinuousListening()
+            try {
+                voiceProcessor.startContinuousListening()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to start diary listening", e)
+                _isDiaryListening.update { false }
+                _errorMessage.update { "Failed to start voice capture: ${e.message}" }
+                return@launch
+            }
             voiceProcessor.recognizedTextFlow.collect { text ->
                 if (text.isNotBlank() && _isDiaryListening.value) {
                     saveDiaryEntry(text)
@@ -1689,9 +1697,10 @@ class ChatViewModel @Inject constructor(
         _diaryDates.update { dates }
     }
 
-    private fun todayDateKey(): String =
-        java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
-            .format(java.util.Date())
+    private fun todayDateKey(): String {
+        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+        return sdf.format(java.util.Date())
+    }
 
     private var diaryVoiceJob: Job? = null
 
