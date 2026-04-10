@@ -142,7 +142,7 @@ class DeviceCapabilityDetector @Inject constructor(
             .sortedWith(compareByDescending<Pair<LlmOption, Compatibility>> { it.first.qualityRating }
                 .thenBy { it.first.sizeBytes })
             .firstOrNull()?.first
-            ?: LlmOption.BITNET_2B // fallback to BitNet if nothing scores well
+            ?: LlmOption.CONFIGURED_MODEL // fallback for very low-end devices
     }
 
     /**

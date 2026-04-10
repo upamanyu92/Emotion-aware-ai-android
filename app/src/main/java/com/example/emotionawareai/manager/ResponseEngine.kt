@@ -133,9 +133,10 @@ class ResponseEngine @Inject constructor(
         if (!enabled) stopSpeaking()
     }
 
-    suspend fun loadModel(): Boolean = withContext(Dispatchers.IO) {
-        llmEngine.loadModel()
-    }
+    suspend fun loadModel(modelFileName: String = LLMEngine.DEFAULT_MODEL_FILE): Boolean =
+        withContext(Dispatchers.IO) {
+            llmEngine.loadModel(modelFileName)
+        }
 
     /** Returns `true` if a model is currently loaded and ready for inference. */
     val isModelLoaded: Boolean get() = llmEngine.isLoaded
@@ -146,22 +147,26 @@ class ResponseEngine @Inject constructor(
      *
      * @return `true` if the file was installed and the model loaded successfully.
      */
-    suspend fun installAndLoadModel(inputStream: java.io.InputStream): Boolean =
-        withContext(Dispatchers.IO) {
-            llmEngine.installAndLoadModel(inputStream)
-        }
+    suspend fun installAndLoadModel(
+        inputStream: java.io.InputStream,
+        modelFileName: String = LLMEngine.DEFAULT_MODEL_FILE
+    ): Boolean = withContext(Dispatchers.IO) {
+        llmEngine.installAndLoadModel(inputStream, modelFileName)
+    }
 
     /**
      * Returns `true` if the model file is present on-disk (without loading it).
      * Delegates to [LLMEngine.isModelFileAvailable].
      */
-    fun isModelFileAvailable(): Boolean = llmEngine.isModelFileAvailable()
+    fun isModelFileAvailable(modelFileName: String = LLMEngine.DEFAULT_MODEL_FILE): Boolean =
+        llmEngine.isModelFileAvailable(modelFileName)
 
     /**
      * The expected on-device path for the model file.
      * Expose this to the user for setup instructions.
      */
-    fun modelFilePath(): String = llmEngine.modelFilePath()
+    fun modelFilePath(modelFileName: String = LLMEngine.DEFAULT_MODEL_FILE): String =
+        llmEngine.modelFilePath(modelFileName)
 
     fun release() {
         stopSpeaking()

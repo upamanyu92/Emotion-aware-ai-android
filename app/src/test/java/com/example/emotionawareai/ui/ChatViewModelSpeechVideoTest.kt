@@ -131,11 +131,11 @@ class ChatViewModelSpeechVideoTest {
         coEvery { memoryManager.isPrivacyNoticeShown() } returns true
         coEvery { memoryManager.getLastCheckInDate() } returns ""
         every { memoryManager.observeActiveGoals() } returns flowOf(emptyList())
-        coEvery { responseEngine.loadModel() } returns true
+        coEvery { responseEngine.loadModel(any()) } returns true
         coEvery { responseEngine.isPiperVoiceReady(any()) } returns false
         every { responseEngine.isSpeaking } returns responseSpeakingFlow
-        every { responseEngine.isModelFileAvailable() } returns false
-        every { responseEngine.modelFilePath() } returns "/data/user/0/com.example.emotionawareai/files/models/model.gguf"
+        every { responseEngine.isModelFileAvailable(any()) } returns false
+        every { responseEngine.modelFilePath(any()) } returns "/data/user/0/com.example.emotionawareai/files/models/model.gguf"
 
         // ModelDownloader state flows — idle by default so ViewModel init doesn't trigger load
         every { modelDownloader.isDownloading } returns MutableStateFlow(false)

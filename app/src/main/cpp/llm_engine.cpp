@@ -1,7 +1,7 @@
 #include <jni.h>
 #include <string>
 #include <vector>
-#include <sstream>
+#include <mutex>
 #include <android/log.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -9,114 +9,163 @@
 #include <cerrno>
 #include <cstring>
 
+// llama.cpp public API
+#include "llama.h"
+
 #define LOG_TAG "LLMEngine"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 
 // ---------------------------------------------------------------------------
-// Helper function to validate file existence and readability
+// Inference configuration constants
+// ---------------------------------------------------------------------------
+static constexpr int   N_CTX          = 2048;   // context window (tokens)
+static constexpr int   N_BATCH        = 512;    // batch size for prompt eval
+static constexpr int   MAX_NEW_TOKENS = 1024;   // cap on generated tokens
+static constexpr float TEMPERATURE    = 0.7f;   // sampling temperature
+static constexpr float TOP_P          = 0.9f;   // nucleus sampling threshold
+
+// ---------------------------------------------------------------------------
+// Global error string — written on failure, read by nativeGetLastError
+// ---------------------------------------------------------------------------
+static std::string g_last_error;
+static std::mutex  g_error_mutex;
+
+static void setLastError(const std::string& msg) {
+    std::lock_guard<std::mutex> lock(g_error_mutex);
+    g_last_error = msg;
+    LOGE("%s", msg.c_str());
+}
+
+// ---------------------------------------------------------------------------
+// llama.cpp backend initialisation (one-time, thread-safe)
+// ---------------------------------------------------------------------------
+static void initLlamaBackend() {
+    static std::once_flag flag;
+    std::call_once(flag, []() {
+        // Redirect llama.cpp log output to Android logcat
+        llama_log_set([](enum llama_log_level level, const char* text, void*) {
+            int prio;
+            switch (level) {
+                case LLAMA_LOG_LEVEL_ERROR: prio = ANDROID_LOG_ERROR; break;
+                case LLAMA_LOG_LEVEL_WARN:  prio = ANDROID_LOG_WARN;  break;
+                case LLAMA_LOG_LEVEL_INFO:  prio = ANDROID_LOG_INFO;  break;
+                default:                    prio = ANDROID_LOG_DEBUG; break;
+            }
+            __android_log_print(prio, "llama.cpp", "%s", text);
+        }, nullptr);
+
+        llama_backend_init();
+        LOGI("llama.cpp backend initialised");
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Helper: validate file exists, is a regular file, is readable, and ≥ 1 MB
 // ---------------------------------------------------------------------------
 static bool validateModelFile(const char* path) {
-    // Check if file exists
     struct stat st;
     if (stat(path, &st) != 0) {
-        LOGE("Model file does not exist: %s (errno=%d, %s)", path, errno, strerror(errno));
+        setLastError(std::string("Model file not found: ") + path
+                     + " (errno=" + std::to_string(errno) + ")");
         return false;
     }
-
-    // Check if it's a regular file
     if (!S_ISREG(st.st_mode)) {
-        LOGE("Model path is not a regular file: %s", path);
+        setLastError(std::string("Model path is not a regular file: ") + path);
         return false;
     }
-
-    // Check if file is readable
     if (access(path, R_OK) != 0) {
-        LOGE("Model file is not readable: %s (errno=%d, %s)", path, errno, strerror(errno));
+        setLastError(std::string("Model file not readable: ") + path);
         return false;
     }
-
-    // Check file size is reasonable (should be > 1MB for a real model)
     if (st.st_size < 1024 * 1024) {
-        LOGE("Model file is too small (%lld bytes): %s", (long long)st.st_size, path);
+        setLastError(std::string("Model file too small (")
+                     + std::to_string(st.st_size) + " bytes): " + path);
         return false;
     }
-
-    LOGI("Model file validation passed: %s (size=%lld bytes)", path, (long long)st.st_size);
+    LOGI("Model file validated: %s (%lld bytes)", path, (long long)st.st_size);
     return true;
 }
 
 // ---------------------------------------------------------------------------
-// Internal state – replace with llama_model* / llama_context* when integrating
-// bitnet.cpp (Microsoft's 1-bit LLM runtime, a fork of llama.cpp).
-// The model file is the Microsoft BitNet b1.58 2B GGUF downloaded by
-// ModelDownloader.kt. Pointers are stored as jlong handles passed to Kotlin.
+// Persistent model state
 // ---------------------------------------------------------------------------
-
 struct ModelState {
-    std::string model_path;
-    bool is_loaded = false;
-    // llama_model*   model   = nullptr;  // bitnet.cpp integration point
-    // llama_context* context = nullptr;  // bitnet.cpp integration point
+    std::string     model_path;
+    int             n_threads = 4;
+    llama_model*    model     = nullptr;
+    llama_context*  context   = nullptr;
 };
 
 // ---------------------------------------------------------------------------
 // JNI: nativeLoadModel
-// Returns a native handle (pointer cast to jlong) on success, 0 on failure.
+// Loads model + creates inference context. Returns pointer-as-jlong on
+// success, 0 on failure. Caller retrieves the error via nativeGetLastError.
 // ---------------------------------------------------------------------------
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_example_emotionawareai_engine_LLMEngine_nativeLoadModel(
         JNIEnv* env,
         jobject /* thiz */,
-        jstring model_path_jstr) {
+        jstring model_path_jstr,
+        jint    n_threads) {
 
     const char* model_path = env->GetStringUTFChars(model_path_jstr, nullptr);
-    if (model_path == nullptr) {
-        LOGE("Failed to get model path string");
+    if (!model_path) {
+        setLastError("Failed to convert model path string");
         return 0L;
     }
 
-    LOGI("Loading model from: %s", model_path);
+    LOGI("Loading model: %s (n_threads=%d)", model_path, (int)n_threads);
 
-    // Validate file exists and is readable before proceeding
     if (!validateModelFile(model_path)) {
-        LOGE("Model file validation failed: %s", model_path);
+        env->ReleaseStringUTFChars(model_path_jstr, model_path);
+        return 0L;
+    }
+
+    initLlamaBackend();
+
+    // Load model weights
+    llama_model_params model_params = llama_model_default_params();
+    model_params.n_gpu_layers = 0;   // CPU-only; ARM NEON/dotprod kernels handle everything
+
+    llama_model* model = llama_load_model_from_file(model_path, model_params);
+    if (!model) {
+        setLastError(std::string("llama_load_model_from_file failed for: ") + model_path);
+        env->ReleaseStringUTFChars(model_path_jstr, model_path);
+        return 0L;
+    }
+
+    // Create inference context
+    llama_context_params ctx_params = llama_context_default_params();
+    ctx_params.n_ctx          = N_CTX;
+    ctx_params.n_batch        = N_BATCH;
+    ctx_params.n_threads      = n_threads;
+    ctx_params.n_threads_batch = n_threads;
+
+    llama_context* ctx = llama_new_context_with_model(model, ctx_params);
+    if (!ctx) {
+        setLastError("llama_new_context_with_model failed — not enough memory?");
+        llama_free_model(model);
         env->ReleaseStringUTFChars(model_path_jstr, model_path);
         return 0L;
     }
 
     auto* state = new ModelState();
     state->model_path = std::string(model_path);
+    state->n_threads  = n_threads;
+    state->model      = model;
+    state->context    = ctx;
+
     env->ReleaseStringUTFChars(model_path_jstr, model_path);
-
-    // -----------------------------------------------------------------
-    // bitnet.cpp integration point:
-    //
-    // llama_model_params model_params = llama_model_default_params();
-    // model_params.n_gpu_layers = 0; // CPU-only; BitNet uses optimised 1-bit kernels
-    // state->model = llama_load_model_from_file(state->model_path.c_str(), model_params);
-    // if (state->model == nullptr) {
-    //     LOGE("Failed to load BitNet model");
-    //     delete state;
-    //     return 0L;
-    // }
-    // llama_context_params ctx_params = llama_context_default_params();
-    // ctx_params.n_ctx    = 2048;
-    // ctx_params.n_batch  = 512;
-    // ctx_params.n_threads = 4;
-    // state->context = llama_new_context_with_model(state->model, ctx_params);
-    // -----------------------------------------------------------------
-
-    state->is_loaded = true;
-    LOGI("Model stub loaded successfully (path: %s)", state->model_path.c_str());
-
+    LOGI("Model loaded successfully: %s", state->model_path.c_str());
     return reinterpret_cast<jlong>(state);
 }
 
 // ---------------------------------------------------------------------------
 // JNI: nativeGenerateResponse
-// Calls the token callback (Kotlin lambda via JNI) for each generated token.
+// Tokenises the prompt, runs the prefill decode, then samples tokens one at a
+// time, invoking the Kotlin callback lambda for each text piece.
 // Returns JNI_TRUE on success.
 // ---------------------------------------------------------------------------
 extern "C" JNIEXPORT jboolean JNICALL
@@ -128,81 +177,170 @@ Java_com_example_emotionawareai_engine_LLMEngine_nativeGenerateResponse(
         jobject token_callback) {
 
     if (handle == 0L) {
-        LOGE("Invalid model handle");
+        setLastError("nativeGenerateResponse called with null handle");
         return JNI_FALSE;
     }
-
     auto* state = reinterpret_cast<ModelState*>(handle);
-    if (!state->is_loaded) {
-        LOGE("Model not loaded");
+    if (!state->model || !state->context) {
+        setLastError("Model or context is null — was it loaded correctly?");
         return JNI_FALSE;
     }
 
     const char* prompt = env->GetStringUTFChars(prompt_jstr, nullptr);
-    if (prompt == nullptr) {
-        LOGE("Failed to get prompt string");
+    if (!prompt) {
+        setLastError("Failed to convert prompt string");
         return JNI_FALSE;
     }
-
     LOGD("Generating response for prompt (first 80 chars): %.80s", prompt);
 
-    // Obtain the callback method reference
-    jclass callback_class = env->GetObjectClass(token_callback);
-    jmethodID invoke_method = env->GetMethodID(
-            callback_class, "invoke", "(Ljava/lang/Object;)Ljava/lang/Object;");
-
-    if (invoke_method == nullptr) {
-        LOGE("Could not find callback invoke method");
+    // ── Resolve callback method ──────────────────────────────────────────────
+    jclass   cb_class  = env->GetObjectClass(token_callback);
+    jmethodID cb_invoke = env->GetMethodID(
+            cb_class, "invoke", "(Ljava/lang/Object;)Ljava/lang/Object;");
+    if (!cb_invoke) {
+        setLastError("Could not find callback invoke() method");
         env->ReleaseStringUTFChars(prompt_jstr, prompt);
         return JNI_FALSE;
     }
 
-    // -----------------------------------------------------------------
-    // bitnet.cpp integration point:
-    //
-    // std::vector<llama_token> tokens = llama_tokenize(state->model, prompt, true);
-    // llama_eval(state->context, tokens.data(), (int)tokens.size(), 0, 4);
-    //
-    // for (int i = 0; i < max_tokens; ++i) {
-    //     llama_token token = llama_sample_token_greedy(state->context, &candidates);
-    //     if (token == llama_token_eos(state->model)) break;
-    //     const char* token_str = llama_token_to_piece(state->context, token);
-    //     jstring j_token = env->NewStringUTF(token_str);
-    //     env->CallObjectMethod(token_callback, invoke_method, j_token);
-    //     env->DeleteLocalRef(j_token);
-    //     llama_eval(state->context, &token, 1, n_past, 4);
-    // }
-    // -----------------------------------------------------------------
+    // ── Tokenise prompt ───────────────────────────────────────────────────────
+    int prompt_len = static_cast<int>(strlen(prompt));
+    std::vector<llama_token> tokens(N_CTX);
+    int n_tokens = llama_tokenize(
+            state->model,
+            prompt,
+            prompt_len,
+            tokens.data(),
+            static_cast<int>(tokens.size()),
+            /*add_special=*/true,
+            /*parse_special=*/true);
 
-    // Stub: produce a placeholder response word-by-word to exercise the
-    // streaming callback path end-to-end.
-    std::string stub_response = "I understand how you're feeling. "
-                                "I'm here to listen and help you. "
-                                "Tell me more about what's on your mind.";
+    if (n_tokens < 0) {
+        // Buffer too small — truncate to N_CTX
+        LOGE("Prompt too long (%d tokens needed), truncating to %d", -n_tokens, N_CTX);
+        tokens.resize(N_CTX);
+        n_tokens = N_CTX;
+    } else {
+        tokens.resize(n_tokens);
+    }
+    LOGD("Prompt tokenised: %d tokens", n_tokens);
 
-    std::istringstream stream(stub_response);
-    std::string word;
-    while (std::getline(stream, word, ' ')) {
-        word += ' ';
-        jstring j_token = env->NewStringUTF(word.c_str());
-        env->CallObjectMethod(token_callback, invoke_method, j_token);
-        env->DeleteLocalRef(j_token);
+    // ── Prefill decode ────────────────────────────────────────────────────────
+    // Process prompt tokens in one batch (they all fit within N_BATCH in a
+    // typical mobile scenario; for very long prompts N_BATCH handles chunking)
+    llama_batch batch = llama_batch_get_one(tokens.data(), n_tokens, 0, 0);
+    if (llama_decode(state->context, batch) != 0) {
+        setLastError("llama_decode failed during prompt prefill");
+        env->ReleaseStringUTFChars(prompt_jstr, prompt);
+        return JNI_FALSE;
+    }
+    int n_past = n_tokens;
 
-        if (env->ExceptionCheck()) {
-            LOGE("Exception during token callback");
-            env->ExceptionClear();
+    // ── Sampler chain ─────────────────────────────────────────────────────────
+    llama_sampler* sampler = llama_sampler_chain_init(
+            llama_sampler_chain_default_params());
+    llama_sampler_chain_add(sampler, llama_sampler_init_top_p(TOP_P, 1));
+    llama_sampler_chain_add(sampler, llama_sampler_init_temp(TEMPERATURE));
+    llama_sampler_chain_add(sampler, llama_sampler_init_dist(0xFFFFFFFF));
+
+    // ── Autoregressive generation loop ────────────────────────────────────────
+    char piece[512];
+    bool ok = true;
+
+    for (int i = 0; i < MAX_NEW_TOKENS; ++i) {
+        llama_token new_token = llama_sampler_sample(sampler, state->context, -1);
+
+        if (llama_token_is_eog(state->model, new_token)) {
+            LOGD("EOS reached at step %d", i);
             break;
         }
+
+        // Convert token id to its string piece
+        int n_piece = llama_token_to_piece(
+                state->model, new_token, piece, sizeof(piece) - 1, 0, false);
+        if (n_piece <= 0) {
+            LOGE("llama_token_to_piece failed for token %d", new_token);
+            ok = false;
+            break;
+        }
+        piece[n_piece] = '\0';
+
+        // Invoke the Kotlin callback with this piece
+        jstring j_piece = env->NewStringUTF(piece);
+        if (j_piece) {
+            env->CallObjectMethod(token_callback, cb_invoke, j_piece);
+            env->DeleteLocalRef(j_piece);
+        }
+
+        if (env->ExceptionCheck()) {
+            LOGE("JVM exception during token callback at step %d", i);
+            env->ExceptionClear();
+            ok = false;
+            break;
+        }
+
+        // Advance context by one token
+        llama_batch next = llama_batch_get_one(&new_token, 1, n_past, 0);
+        if (llama_decode(state->context, next) != 0) {
+            LOGE("llama_decode failed at step %d", i);
+            ok = false;
+            break;
+        }
+        ++n_past;
     }
 
+    llama_sampler_free(sampler);
     env->ReleaseStringUTFChars(prompt_jstr, prompt);
-    LOGD("Response generation complete");
-    return JNI_TRUE;
+    LOGD("Response generation complete (ok=%d, n_past=%d)", (int)ok, n_past);
+    return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+// ---------------------------------------------------------------------------
+// JNI: nativeCountTokens
+// Returns the number of tokens the model's tokenizer would produce for the
+// given text. Used for context-window budget checks. Returns -1 on error.
+// ---------------------------------------------------------------------------
+extern "C" JNIEXPORT jint JNICALL
+Java_com_example_emotionawareai_engine_LLMEngine_nativeCountTokens(
+        JNIEnv* env,
+        jobject /* thiz */,
+        jlong   handle,
+        jstring text_jstr) {
+
+    if (handle == 0L) return -1;
+    auto* state = reinterpret_cast<ModelState*>(handle);
+    if (!state->model) return -1;
+
+    const char* text = env->GetStringUTFChars(text_jstr, nullptr);
+    if (!text) return -1;
+
+    // Pass a temporary buffer; we only care about the count.
+    std::vector<llama_token> tmp(4096);
+    int n = llama_tokenize(
+            state->model, text, static_cast<int>(strlen(text)),
+            tmp.data(), static_cast<int>(tmp.size()),
+            /*add_special=*/false, /*parse_special=*/false);
+    env->ReleaseStringUTFChars(text_jstr, text);
+
+    // Negative result means the buffer was too small; negate to get the count.
+    return n < 0 ? -n : n;
+}
+
+// ---------------------------------------------------------------------------
+// JNI: nativeGetLastError
+// Returns a human-readable description of the most recent failure.
+// ---------------------------------------------------------------------------
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_example_emotionawareai_engine_LLMEngine_nativeGetLastError(
+        JNIEnv* env,
+        jobject /* thiz */) {
+    std::lock_guard<std::mutex> lock(g_error_mutex);
+    return env->NewStringUTF(g_last_error.c_str());
 }
 
 // ---------------------------------------------------------------------------
 // JNI: nativeReleaseModel
-// Frees all resources held by the model handle.
+// Frees the inference context and model weights.
 // ---------------------------------------------------------------------------
 extern "C" JNIEXPORT void JNICALL
 Java_com_example_emotionawareai_engine_LLMEngine_nativeReleaseModel(
@@ -211,16 +349,17 @@ Java_com_example_emotionawareai_engine_LLMEngine_nativeReleaseModel(
         jlong handle) {
 
     if (handle == 0L) return;
-
     auto* state = reinterpret_cast<ModelState*>(handle);
 
-    // -----------------------------------------------------------------
-    // bitnet.cpp integration point:
-    //
-    // if (state->context) { llama_free(state->context); state->context = nullptr; }
-    // if (state->model)   { llama_free_model(state->model); state->model = nullptr; }
-    // -----------------------------------------------------------------
+    if (state->context) {
+        llama_free(state->context);
+        state->context = nullptr;
+    }
+    if (state->model) {
+        llama_free_model(state->model);
+        state->model = nullptr;
+    }
 
-    LOGI("Releasing model: %s", state->model_path.c_str());
+    LOGI("Model released: %s", state->model_path.c_str());
     delete state;
 }

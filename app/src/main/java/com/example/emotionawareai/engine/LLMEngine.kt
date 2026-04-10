@@ -4,9 +4,12 @@ import android.content.Context
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
@@ -14,12 +17,18 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Kotlin facade over the native LLM inference engine.
+ * Kotlin facade over the native LLM inference engine (llama.cpp via JNI).
  *
- * The actual inference is handled by [llm_engine.cpp] via JNI. The model file
- * is the Microsoft BitNet b1.58 GGUF downloaded by [ModelDownloader]. To
- * activate real on-device inference, uncomment the bitnet.cpp integration
- * points in llm_engine.cpp and add bitnet.cpp as a CMake sub-directory.
+ * The actual inference is handled by [llm_engine.cpp] which uses the llama.cpp
+ * library to run any GGUF model downloaded by [ModelDownloader].
+ *
+ * Key improvements over the original stub implementation:
+ *  - True per-token streaming via [callbackFlow] — each token emitted as it is
+ *    produced by the C++ sampling loop, enabling real-time UI updates.
+ *  - Unique per-model file names prevent models from overwriting each other.
+ *  - Thread count is auto-tuned to device CPU core count.
+ *  - Load/inference failures surface a human-readable error via [lastError].
+ *  - [countTokens] allows callers to check prompt budget against [N_CTX].
  */
 @Singleton
 class LLMEngine @Inject constructor(
@@ -27,6 +36,10 @@ class LLMEngine @Inject constructor(
 ) {
     private var nativeHandle: Long = 0L
     private val stubResponseCounter = AtomicInteger(0)
+
+    /** Last error message from the native layer, or empty string if no error. */
+    var lastError: String = ""
+        private set
 
     val isLoaded: Boolean get() = nativeHandle != 0L
 
@@ -55,17 +68,17 @@ class LLMEngine @Inject constructor(
             val modelFile = File(context.filesDir, "models/$modelFileName")
             if (!modelFile.exists()) {
                 Log.w(TAG, "Model file not found at ${modelFile.absolutePath}; using stub mode")
-                // Keep nativeHandle at 0 so the rich Kotlin stub pool is used instead
-                // of the native hard-coded sentence.
                 return@withContext false
             }
 
             Log.i(TAG, "Loading model: ${modelFile.absolutePath}")
-            nativeHandle = nativeLoadModel(modelFile.absolutePath)
+            nativeHandle = nativeLoadModel(modelFile.absolutePath, recommendedThreadCount())
 
             if (nativeHandle == 0L) {
-                Log.e(TAG, "Failed to load model")
+                lastError = nativeGetLastError()
+                Log.e(TAG, "Failed to load model: $lastError")
             } else {
+                lastError = ""
                 Log.i(TAG, "Model loaded successfully (handle=$nativeHandle)")
             }
             nativeHandle != 0L
@@ -82,7 +95,6 @@ class LLMEngine @Inject constructor(
         inputStream: java.io.InputStream,
         modelFileName: String = DEFAULT_MODEL_FILE
     ): Boolean = withContext(Dispatchers.IO) {
-        // Release any previously loaded model before overwriting the file.
         release()
         val installed = ModelFileLocator.installFromInputStream(
             context.filesDir, inputStream, modelFileName
@@ -92,39 +104,49 @@ class LLMEngine @Inject constructor(
     }
 
     /**
-     * Generates a response token-by-token for [prompt].
-     * Each emitted [String] is one or more tokens; collect them to build the
-     * full response.
+     * Returns the number of tokens the loaded model's tokenizer would produce
+     * for [text]. Returns -1 if the model is not loaded. Useful for checking
+     * whether a prompt would exceed the context window before inference.
      */
-    fun generateResponse(prompt: String): Flow<String> = flow {
+    fun countTokens(text: String): Int {
+        if (!isLoaded) return -1
+        return nativeCountTokens(nativeHandle, text)
+    }
+
+    /**
+     * Generates a response token-by-token for [prompt].
+     *
+     * Each emitted [String] is a single text piece as produced by the llama.cpp
+     * token-to-piece conversion. Collect the stream to assemble the full response.
+     *
+     * When the model is not loaded (stub mode) the flow emits a single contextual
+     * response string from the [STUB_RESPONSE_POOLS] and completes.
+     */
+    fun generateResponse(prompt: String): Flow<String> = callbackFlow {
         if (!isLoaded) {
             Log.w(TAG, "Model not loaded — returning contextual stub response")
-            emit(generateStubResponse(prompt))
-            return@flow
+            trySend(generateStubResponse(prompt))
+            close()
+            return@callbackFlow
         }
 
-        val tokenBuffer = StringBuilder()
-
-        val success = nativeGenerateResponse(nativeHandle, prompt) { token: String ->
-            tokenBuffer.append(token)
-        }
-
-        if (success) {
-            // Re-emit as a single chunk; for true streaming the C++ layer
-            // would call the callback per-token and we'd emit inside the lambda.
-            // Restructure to Flow<String> emission here once llama.cpp is wired in.
-            val nativeResponse = tokenBuffer.toString()
-            if (nativeResponse.normalizedForComparison() == NORMALIZED_NATIVE_PLACEHOLDER_RESPONSE) {
-                Log.w(TAG, "Native runtime returned placeholder output; using Kotlin stub response instead")
-                emit(generateStubResponse(prompt))
-            } else {
-                emit(nativeResponse)
+        // Launch inference on IO thread. nativeGenerateResponse blocks until
+        // the full response is produced, calling the lambda for each token piece.
+        val inferenceJob = launch(Dispatchers.IO) {
+            val success = nativeGenerateResponse(nativeHandle, prompt) { token: String ->
+                trySend(token)
             }
-        } else {
-            Log.e(TAG, "Native generation failed")
-            emit("Sorry, I encountered an error generating a response.")
+            if (!success) {
+                val err = nativeGetLastError()
+                lastError = err.ifBlank { "Unknown inference error" }
+                Log.e(TAG, "Native generation failed: $lastError")
+                trySend("Sorry, I encountered an error generating a response.")
+            }
+            close()
         }
-    }.flowOn(Dispatchers.IO)
+
+        awaitClose { inferenceJob.cancel() }
+    }.buffer(Channel.UNLIMITED) // prevent backpressure drops during slow consumers
 
     /**
      * Generates a varied, contextual stub response when no real model is loaded.
@@ -163,8 +185,6 @@ class LLMEngine @Inject constructor(
         return userLine.removePrefix("[USER]").trim()
     }
 
-    private fun String.normalizedForComparison(): String = trim().replace(Regex("\\s+"), " ")
-
     /**
      * Releases all native resources. Safe to call multiple times.
      */
@@ -178,7 +198,9 @@ class LLMEngine @Inject constructor(
 
     // ── JNI declarations ─────────────────────────────────────────────────────
 
-    private external fun nativeLoadModel(modelPath: String): Long
+    /** Loads the GGUF model at [modelPath] with [nThreads] inference threads.
+     *  Returns a native handle on success, 0L on failure. */
+    private external fun nativeLoadModel(modelPath: String, nThreads: Int): Long
 
     private external fun nativeGenerateResponse(
         handle: Long,
@@ -186,17 +208,42 @@ class LLMEngine @Inject constructor(
         tokenCallback: (String) -> Unit
     ): Boolean
 
+    /** Returns the token count for [text] using the loaded model's tokenizer. */
+    private external fun nativeCountTokens(handle: Long, text: String): Int
+
+    /** Returns the last error message set by the native layer, or empty string. */
+    private external fun nativeGetLastError(): String
+
     private external fun nativeReleaseModel(handle: Long)
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /**
+     * Returns a thread count tuned to the device's CPU core count.
+     * Uses slightly fewer than all cores to leave headroom for the UI thread and
+     * other Android system services.
+     */
+    private fun recommendedThreadCount(): Int =
+        when (Runtime.getRuntime().availableProcessors()) {
+            in 8..Int.MAX_VALUE -> 6
+            in 6..7 -> 4
+            else -> 2
+        }
 
     // ── Companion ─────────────────────────────────────────────────────────────
 
     companion object {
         private const val TAG = "LLMEngine"
-        const val DEFAULT_MODEL_FILE = "model.gguf"
-        private const val NATIVE_PLACEHOLDER_RESPONSE =
-            "I understand how you're feeling. I'm here to listen and help you. Tell me more about what's on your mind."
-        private val NORMALIZED_NATIVE_PLACEHOLDER_RESPONSE =
-            NATIVE_PLACEHOLDER_RESPONSE.trim().replace(Regex("\\s+"), " ")
+
+        /** Context window in tokens (matches N_CTX in llm_engine.cpp). */
+        const val N_CTX = 2048
+
+        /**
+         * Default model file name — matches [LlmOption.CONFIGURED_MODEL.modelFileName].
+         * Callers should always prefer passing the specific option's [modelFileName]
+         * rather than relying on this constant to avoid silent file collisions.
+         */
+        const val DEFAULT_MODEL_FILE = "smollm2_135m_q4.gguf"
 
         /**
          * Emotion-keyed pools of stub responses. Each pool must have at least 5

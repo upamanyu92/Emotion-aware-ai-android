@@ -132,11 +132,11 @@ class ChatViewModelLlmSetupTest {
         coEvery { memoryManager.isLlmSetupComplete() } returns false
         coEvery { memoryManager.getSelectedLlmId() } returns ""
         every { memoryManager.observeActiveGoals() } returns flowOf(emptyList())
-        coEvery { responseEngine.loadModel() } returns true
+        coEvery { responseEngine.loadModel(any()) } returns true
         coEvery { responseEngine.isPiperVoiceReady(any()) } returns false
         every { responseEngine.isSpeaking } returns responseSpeakingFlow
-        every { responseEngine.isModelFileAvailable() } returns false
-        every { responseEngine.modelFilePath() } returns "/fake/model.gguf"
+        every { responseEngine.isModelFileAvailable(any()) } returns false
+        every { responseEngine.modelFilePath(any()) } returns "/fake/model.gguf"
 
         every { modelDownloader.isDownloading } returns downloadingFlow
         every { modelDownloader.downloadProgress } returns downloadProgressFlow
@@ -205,7 +205,7 @@ class ChatViewModelLlmSetupTest {
         advanceUntilIdle()
 
         // Set up model as available after download completes
-        every { responseEngine.isModelFileAvailable() } returns true
+        every { responseEngine.isModelFileAvailable(any()) } returns true
 
         viewModel.startLlmSetup(LlmOption.SMOLLM2_135M)
         assertEquals(LlmSetupPhase.DOWNLOADING, viewModel.llmSetupPhase.value)
@@ -226,7 +226,7 @@ class ChatViewModelLlmSetupTest {
         advanceUntilIdle()
 
         // Model file not available after download
-        every { responseEngine.isModelFileAvailable() } returns false
+        every { responseEngine.isModelFileAvailable(any()) } returns false
         downloadFailedFlow.value = false // set before setup
 
         viewModel.startLlmSetup(LlmOption.SMOLLM2_135M)

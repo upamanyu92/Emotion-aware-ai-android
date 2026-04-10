@@ -21,39 +21,78 @@ data class ConversationContext(
      * The system block embeds the mental-health companion persona, real-time
      * emotion signals, and injected long-term memories so the model can
      * provide contextually aware, growth-oriented responses.
+     *
+     * History entries are trimmed from the oldest end first when the total
+     * prompt would exceed [MAX_PROMPT_CHARS], keeping the most recent context
+     * within the model's context window.
      */
-    fun buildPrompt(): String = buildString {
-        appendLine(SYSTEM_PROMPT)
-        appendLine("Current emotional signal: ${detectedEmotion.systemPromptHint}")
-        if (audioToneEmotion != Emotion.UNKNOWN && audioToneEmotion != Emotion.NEUTRAL) {
-            appendLine("Voice tone hint: user may sound ${audioToneEmotion.displayName.lowercase()}.")
-        }
-        appendLine("Response style: ${systemStyle.description}")
+    fun buildPrompt(): String {
+        // Build the fixed prefix (everything before the CONTEXT section)
+        val prefix = buildString {
+            appendLine(SYSTEM_PROMPT)
+            appendLine("Current emotional signal: ${detectedEmotion.systemPromptHint}")
+            if (audioToneEmotion != Emotion.UNKNOWN && audioToneEmotion != Emotion.NEUTRAL) {
+                appendLine("Voice tone hint: user may sound ${audioToneEmotion.displayName.lowercase()}.")
+            }
+            appendLine("Response style: ${systemStyle.description}")
 
-        if (retrievedMemories.isNotEmpty()) {
-            appendLine()
-            appendLine("[LONG-TERM MEMORY]")
-            retrievedMemories.forEach { memory ->
-                appendLine("- [${memory.type.label}] ${memory.content}")
+            if (retrievedMemories.isNotEmpty()) {
+                appendLine()
+                appendLine("[LONG-TERM MEMORY]")
+                retrievedMemories.forEach { memory ->
+                    appendLine("- [${memory.type.label}] ${memory.content}")
+                }
             }
         }
 
-        if (recentHistory.isNotEmpty()) {
-            appendLine()
-            appendLine("[CONTEXT]")
-            recentHistory.takeLast(MAX_HISTORY_TURNS).forEach { msg ->
-                val roleTag = if (msg.isFromUser) "User" else "Assistant"
-                appendLine("$roleTag: ${msg.content}")
-            }
+        // The user turn closes the prompt
+        val suffix = "\n[USER] $userMessage\n[ASSISTANT]"
+
+        // Build history lines in chronological order (newest last)
+        val historyLines: List<String> = recentHistory.takeLast(MAX_HISTORY_TURNS).map { msg ->
+            val roleTag = if (msg.isFromUser) "User" else "Assistant"
+            "$roleTag: ${msg.content}"
         }
 
-        appendLine()
-        appendLine("[USER] $userMessage")
-        append("[ASSISTANT]")
+        // Greedily include history from newest to oldest within the character budget.
+        // Lines are then output in chronological order so the model sees them naturally.
+        val budgetForHistory = MAX_PROMPT_CHARS - prefix.length - suffix.length
+        val includedLines = mutableListOf<String>()
+        var usedChars = CONTEXT_HEADER.length  // account for "[CONTEXT]\n" header
+        for (line in historyLines.asReversed()) {
+            val lineChars = line.length + 1  // +1 for the trailing newline
+            if (usedChars + lineChars > budgetForHistory) break
+            includedLines.add(0, line)        // prepend to maintain chronological order
+            usedChars += lineChars
+        }
+
+        val historySection = if (includedLines.isNotEmpty()) {
+            buildString {
+                appendLine()
+                appendLine("[CONTEXT]")
+                includedLines.forEach { appendLine(it) }
+            }
+        } else {
+            ""
+        }
+
+        return prefix + historySection + suffix
     }
 
     companion object {
         private const val MAX_HISTORY_TURNS = 6
+
+        /**
+         * Approximate character budget for the full prompt.
+         *
+         * At ~3.5 chars/token and a 2048-token context window, 5800 chars leaves
+         * roughly 400 tokens for the model's response — a comfortable margin.
+         * Oldest history entries are trimmed first when this limit is approached.
+         */
+        private const val MAX_PROMPT_CHARS = 5800
+
+        /** Characters consumed by the "\n[CONTEXT]\n" header line. */
+        private const val CONTEXT_HEADER = "\n[CONTEXT]\n"
 
         /**
          * Mental health companion persona injected at the start of every prompt.

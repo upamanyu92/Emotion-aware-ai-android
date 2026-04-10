@@ -54,10 +54,10 @@ data class LlmOption(
             minRamMb = 1_024,
             qualityRating = 2,
             downloadUrl = "https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_0_4_4.gguf",
-            modelFileName = "model.gguf"
+            modelFileName = "smollm2_135m_q4.gguf"
         )
 
-        /** Microsoft BitNet b1.58 2B — current default model. */
+        /** Microsoft BitNet b1.58 2B. */
         val BITNET_2B = LlmOption(
             id = "bitnet_b158_2b",
             name = "BitNet b1.58 2B",
@@ -66,7 +66,7 @@ data class LlmOption(
             minRamMb = 4_096,
             qualityRating = 3,
             downloadUrl = "https://huggingface.co/microsoft/BitNet-b1.58-2B-4T-GGUF/resolve/main/ggml-model-i2_s.gguf",
-            modelFileName = "model.gguf"
+            modelFileName = "bitnet_b158_2b.gguf"
         )
 
         /** Google Gemma 2B. */
@@ -78,7 +78,7 @@ data class LlmOption(
             minRamMb = 4_096,
             qualityRating = 4,
             downloadUrl = "https://huggingface.co/google/gemma-2b-it-GGUF/resolve/main/gemma-2b-it-q4_k_m.gguf",
-            modelFileName = "model.gguf"
+            modelFileName = "gemma_2b_q4.gguf"
         )
 
         /** TinyLlama 1.1B. */
@@ -90,7 +90,7 @@ data class LlmOption(
             minRamMb = 3_072,
             qualityRating = 2,
             downloadUrl = "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
-            modelFileName = "model.gguf"
+            modelFileName = "tinyllama_1b_q4.gguf"
         )
 
         /** Phi-3 Mini 3.8B. */
@@ -102,7 +102,7 @@ data class LlmOption(
             minRamMb = 6_144,
             qualityRating = 5,
             downloadUrl = "https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf",
-            modelFileName = "model.gguf"
+            modelFileName = "phi3_mini_q4.gguf"
         )
 
         /** Mistral 7B — for high-end devices. */
@@ -114,15 +114,16 @@ data class LlmOption(
             minRamMb = 8_192,
             qualityRating = 5,
             downloadUrl = "https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/resolve/main/mistral-7b-instruct-v0.2.Q4_K_M.gguf",
-            modelFileName = "model.gguf"
+            modelFileName = "mistral_7b_q4.gguf"
         )
 
         /**
          * The single pre-configured model used for all new installations.
-         * Gemma 2B offers the best balance of quality (4/5) and download size (1.5 GB)
-         * for most Android devices.
+         * SmolLM2 135M is a public, no-auth model (~90 MB) that any device can
+         * download without a HuggingFace token — making it the correct first-run
+         * default. Users can upgrade to a higher-quality model from Settings.
          */
-        val CONFIGURED_MODEL: LlmOption = GEMMA_2B
+        val CONFIGURED_MODEL: LlmOption = SMOLLM2_135M
 
         /** All downloadable options (excluding built-in). */
         val DOWNLOADABLE_OPTIONS =

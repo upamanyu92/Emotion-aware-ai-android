@@ -84,7 +84,7 @@ class ModelDownloader @Inject constructor(
      * immediately.
      */
     @Synchronized
-    fun startDownloadIfAbsent(option: LlmOption = LlmOption.BITNET_2B) {
+    fun startDownloadIfAbsent(option: LlmOption = LlmOption.CONFIGURED_MODEL) {
         if (!option.isDownloadable()) {
             Log.i(TAG, "Skipping download for built-in option ${option.name}")
             return
@@ -105,7 +105,7 @@ class ModelDownloader @Inject constructor(
      * file. If a different model is already downloading, it is cancelled first.
      */
     @Synchronized
-    fun startDownload(option: LlmOption = LlmOption.BITNET_2B) {
+    fun startDownload(option: LlmOption = LlmOption.CONFIGURED_MODEL) {
         if (!option.isDownloadable()) {
             Log.i(TAG, "Skipping download for built-in option ${option.name}")
             return
@@ -160,7 +160,7 @@ class ModelDownloader @Inject constructor(
      * or `-1f` when content-length is unknown.
      */
     suspend fun downloadIfAbsent(
-        option: LlmOption = LlmOption.BITNET_2B,
+        option: LlmOption = LlmOption.CONFIGURED_MODEL,
         onProgress: (Float) -> Unit = {}
     ): Boolean = withContext(Dispatchers.IO) {
         if (!option.isDownloadable()) return@withContext true
@@ -178,7 +178,7 @@ class ModelDownloader @Inject constructor(
      * so that each hop uses the same timeout settings and can be cancelled.
      */
     suspend fun download(
-        option: LlmOption = LlmOption.BITNET_2B,
+        option: LlmOption = LlmOption.CONFIGURED_MODEL,
         onProgress: (Float) -> Unit = {}
     ): Boolean = withContext(Dispatchers.IO) {
         if (!option.isDownloadable()) return@withContext true

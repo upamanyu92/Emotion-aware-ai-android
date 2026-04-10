@@ -474,10 +474,11 @@ class ChatViewModel @Inject constructor(
             // previously used, or Application.onCreate already finished the download
             // before this ViewModel was created).
             val selectedOption = resolveSelectedLlmOption()
-            val available = !selectedOption.isBuiltIn && responseEngine.isModelFileAvailable()
+            val available = !selectedOption.isBuiltIn &&
+                responseEngine.isModelFileAvailable(selectedOption.modelFileName)
             _isModelAvailable.update { available }
             if (available) {
-                val loaded = responseEngine.loadModel()
+                val loaded = responseEngine.loadModel(selectedOption.modelFileName)
                 _isModelLoaded.update { loaded }
                 updateAiActiveState()
                 Log.i(TAG, "Model available: $available, loaded: $loaded")
@@ -491,14 +492,15 @@ class ChatViewModel @Inject constructor(
             modelDownloader.isDownloading.collect { downloading ->
                 if (!downloading) {
                     val selectedOption = resolveSelectedLlmOption()
-                    val available = !selectedOption.isBuiltIn && responseEngine.isModelFileAvailable()
+                    val available = !selectedOption.isBuiltIn &&
+                        responseEngine.isModelFileAvailable(selectedOption.modelFileName)
                     _isModelAvailable.update { available }
 
                     if (_llmSetupPhase.value == LlmSetupPhase.DOWNLOADING) {
                         // We are in the initial setup flow — handle phase transitions here.
                         if (available) {
                             _llmSetupPhase.update { LlmSetupPhase.VERIFYING }
-                            val loaded = responseEngine.loadModel()
+                            val loaded = responseEngine.loadModel(selectedOption.modelFileName)
                             _isModelLoaded.update { loaded }
                             updateAiActiveState()
                             if (loaded) {
@@ -518,7 +520,7 @@ class ChatViewModel @Inject constructor(
                     } else {
                         // Normal post-setup operation: load model if newly available.
                         if (available && !_isModelLoaded.value) {
-                            val loaded = responseEngine.loadModel()
+                            val loaded = responseEngine.loadModel(selectedOption.modelFileName)
                             _isModelLoaded.update { loaded }
                             updateAiActiveState()
                             Log.i(TAG, "${selectedOption.name} download finished — model loaded=$loaded")
@@ -1234,7 +1236,7 @@ class ChatViewModel @Inject constructor(
     }
 
     /** Returns the expected on-device path for the LLM model file. */
-    fun getModelFilePath(): String = responseEngine.modelFilePath()
+    fun getModelFilePath(): String = responseEngine.modelFilePath(resolveSelectedLlmOption().modelFileName)
 
     fun getRecommendedLlmOption(): LlmOption = LlmOption.CONFIGURED_MODEL
 
@@ -1263,8 +1265,12 @@ class ChatViewModel @Inject constructor(
                     _modelInstallState.update { ModelInstallState.ERROR }
                     return@launch
                 }
-                val success = inputStream.use { responseEngine.installAndLoadModel(it) }
-                _isModelAvailable.update { responseEngine.isModelFileAvailable() }
+                val success = inputStream.use {
+                    responseEngine.installAndLoadModel(it, resolveSelectedLlmOption().modelFileName)
+                }
+                _isModelAvailable.update {
+                    responseEngine.isModelFileAvailable(resolveSelectedLlmOption().modelFileName)
+                }
                 _isModelLoaded.update { responseEngine.isModelLoaded }
                 updateAiActiveState()
                 _modelInstallState.update {
