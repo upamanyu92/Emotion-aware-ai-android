@@ -221,7 +221,10 @@ class LLMEngine @Inject constructor(
     /**
      * Returns a thread count tuned to the device's CPU core count.
      * Uses slightly fewer than all cores to leave headroom for the UI thread and
-     * other Android system services.
+     * other Android system services running concurrently:
+     *   - 8+ cores (e.g. Pixel 8 / Snapdragon 8 Gen 3): use 6 — leaves 2 for the OS.
+     *   - 6–7 cores (mid-range): use 4 — keeps UI responsive.
+     *   - < 6 cores (budget/legacy): use 2 — avoids thermal throttling on weak CPUs.
      */
     private fun recommendedThreadCount(): Int =
         when (Runtime.getRuntime().availableProcessors()) {

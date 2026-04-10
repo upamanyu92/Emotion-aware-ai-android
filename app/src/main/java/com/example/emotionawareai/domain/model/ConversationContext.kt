@@ -58,7 +58,7 @@ data class ConversationContext(
         // Lines are then output in chronological order so the model sees them naturally.
         val budgetForHistory = MAX_PROMPT_CHARS - prefix.length - suffix.length
         val includedLines = mutableListOf<String>()
-        var usedChars = CONTEXT_HEADER.length  // account for "[CONTEXT]\n" header
+        var usedChars = CONTEXT_SECTION_HEADER_CHARS  // account for "\n[CONTEXT]\n" header
         for (line in historyLines.asReversed()) {
             val lineChars = line.length + 1  // +1 for the trailing newline
             if (usedChars + lineChars > budgetForHistory) break
@@ -91,8 +91,11 @@ data class ConversationContext(
          */
         private const val MAX_PROMPT_CHARS = 5800
 
-        /** Characters consumed by the "\n[CONTEXT]\n" header line. */
-        private const val CONTEXT_HEADER = "\n[CONTEXT]\n"
+        /**
+         * Character count of the "[CONTEXT]" section header including the
+         * surrounding newlines ("\n[CONTEXT]\n") used in the budget calculation.
+         */
+        private const val CONTEXT_SECTION_HEADER_CHARS = 12  // "\n[CONTEXT]\n"
 
         /**
          * Mental health companion persona injected at the start of every prompt.

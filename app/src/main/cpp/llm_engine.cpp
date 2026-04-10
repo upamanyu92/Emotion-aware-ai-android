@@ -88,6 +88,10 @@ static bool validateModelFile(const char* path) {
     return true;
 }
 
+// Buffer sizes for llama.cpp token conversion and counting
+static constexpr int MAX_TOKEN_PIECE_SIZE  = 512;   // max UTF-8 bytes for a single token piece
+static constexpr int MAX_TOKEN_COUNT_BUFFER = 4096;  // max tokens used for countTokens estimation
+
 // ---------------------------------------------------------------------------
 // Persistent model state
 // ---------------------------------------------------------------------------
@@ -244,7 +248,7 @@ Java_com_example_emotionawareai_engine_LLMEngine_nativeGenerateResponse(
     llama_sampler_chain_add(sampler, llama_sampler_init_dist(0xFFFFFFFF));
 
     // ── Autoregressive generation loop ────────────────────────────────────────
-    char piece[512];
+    char piece[MAX_TOKEN_PIECE_SIZE];
     bool ok = true;
 
     for (int i = 0; i < MAX_NEW_TOKENS; ++i) {
@@ -257,7 +261,7 @@ Java_com_example_emotionawareai_engine_LLMEngine_nativeGenerateResponse(
 
         // Convert token id to its string piece
         int n_piece = llama_token_to_piece(
-                state->model, new_token, piece, sizeof(piece) - 1, 0, false);
+                state->model, new_token, piece, MAX_TOKEN_PIECE_SIZE - 1, 0, false);
         if (n_piece <= 0) {
             LOGE("llama_token_to_piece failed for token %d", new_token);
             ok = false;
@@ -315,7 +319,7 @@ Java_com_example_emotionawareai_engine_LLMEngine_nativeCountTokens(
     if (!text) return -1;
 
     // Pass a temporary buffer; we only care about the count.
-    std::vector<llama_token> tmp(4096);
+    std::vector<llama_token> tmp(MAX_TOKEN_COUNT_BUFFER);
     int n = llama_tokenize(
             state->model, text, static_cast<int>(strlen(text)),
             tmp.data(), static_cast<int>(tmp.size()),
