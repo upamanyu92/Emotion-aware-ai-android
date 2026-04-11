@@ -156,8 +156,7 @@ private fun SelectingContent(
     // Pending confirmation for a model that requires a warning dialog
     var pendingWarningModel by remember { mutableStateOf<LlmOption?>(null) }
 
-    if (pendingWarningModel != null) {
-        val model = pendingWarningModel!!
+    pendingWarningModel?.let { model ->
         AlertDialog(
             onDismissRequest = { pendingWarningModel = null },
             icon = {
@@ -320,8 +319,7 @@ private fun SelectingContent(
             )
         }
 
-        items(availableModels) { (option, compat) ->
-            if (compat.isRecommended) return@items  // already shown above
+        items(availableModels.filter { !it.second.isRecommended }) { (option, compat) ->
             ModelCard(
                 option = option,
                 compatibility = compat,

@@ -117,12 +117,12 @@ data class LlmOption(
             idealUseCase = "Balanced daily companion — good quality without high RAM"
         )
 
-        /** Qwen 2.5 Instruct 1.5B — optimised for structured output and coding. */
+        /** Qwen 2.5 Instruct 1.5B — optimized for structured output and coding. */
         val QWEN_25_1B5 = LlmOption(
             id = "qwen25_1b5",
             name = "Quick Wit",
             technicalName = "Qwen 2.5 1.5B Instruct",
-            description = "Alibaba\u2019s compact instruct model, optimised for structured responses on 6 GB+ phones.",
+            description = "Alibaba\u2019s compact instruct model, optimized for structured responses on 6 GB+ phones.",
             sizeBytes = 1_000_000_000L,
             minRamMb = 6_144,
             qualityRating = 3,
