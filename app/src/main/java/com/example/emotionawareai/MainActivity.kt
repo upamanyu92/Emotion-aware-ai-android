@@ -59,6 +59,7 @@ class MainActivity : ComponentActivity() {
             val llmSetupPhase by viewModel.llmSetupPhase.collectAsStateWithLifecycle()
             val llmSetupError by viewModel.llmSetupError.collectAsStateWithLifecycle()
             val modelDownloadProgress by viewModel.modelDownloadProgress.collectAsStateWithLifecycle()
+            val selectedLlmId by viewModel.selectedLlmId.collectAsStateWithLifecycle()
 
             EmotionAwareAITheme(proThemeEnabled = isProThemeEnabled) {
                 Surface(
@@ -82,6 +83,13 @@ class MainActivity : ComponentActivity() {
                                 setupPhase = llmSetupPhase,
                                 downloadProgress = modelDownloadProgress,
                                 setupError = llmSetupError,
+                                availableModels = viewModel.getAllLlmOptionsWithCompatibility(),
+                                deviceRamMb = viewModel.deviceTotalRamMb,
+                                deviceModel = viewModel.deviceModelName,
+                                deviceChipset = viewModel.deviceChipsetName,
+                                selectedModelForDownload = com.example.emotionawareai.domain.model.LlmOption.fromId(selectedLlmId)
+                                    ?: com.example.emotionawareai.domain.model.LlmOption.CONFIGURED_MODEL,
+                                onModelSelected = { viewModel.selectModelForSetup(it) },
                                 onSkipSetup = { viewModel.skipLlmSetup() },
                                 onRetrySetup = { viewModel.retryLlmSetup() }
                             )

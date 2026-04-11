@@ -172,9 +172,9 @@ class ChatViewModelLlmSetupTest {
     // ── Issue 1 tests ─────────────────────────────────────────────────────────
 
     @Test
-    fun `initial llmSetupPhase is DOWNLOADING`() = runTest {
+    fun `initial llmSetupPhase is SELECTING`() = runTest {
         advanceUntilIdle()
-        assertEquals(LlmSetupPhase.DOWNLOADING, viewModel.llmSetupPhase.value)
+        assertEquals(LlmSetupPhase.SELECTING, viewModel.llmSetupPhase.value)
     }
 
     @Test
