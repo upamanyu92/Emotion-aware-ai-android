@@ -66,7 +66,9 @@ enum class ModelInstallState { IDLE, INSTALLING, SUCCESS, ERROR }
  * [LlmSetupScreen]. Only meaningful while [isLlmSetupComplete] is false.
  */
 enum class LlmSetupPhase {
-    /** The pre-configured model is being downloaded in the background. */
+    /** User is choosing which AI model to install. */
+    SELECTING,
+    /** The selected model is being downloaded in the background. */
     DOWNLOADING,
     /** Download finished; now verifying the model loads correctly. */
     VERIFYING,
@@ -424,12 +426,9 @@ class ChatViewModel @Inject constructor(
         val llmSetup = memoryManager.isLlmSetupComplete()
         _isLlmSetupComplete.update { llmSetup }
         if (llmSetup == false) {
-            // Fresh or skipped setup: lock in the pre-configured model so the download
-            // screen shows progress immediately without any user selection step.
-            val option = LlmOption.CONFIGURED_MODEL
-            _selectedLlmId.update { option.id }
-            _llmSetupPhase.update { LlmSetupPhase.DOWNLOADING }
-            viewModelScope.launch { memoryManager.setSelectedLlmId(option.id) }
+            // New user: show the model selection screen so they can choose the AI
+            // that best fits their device before any download is triggered.
+            _llmSetupPhase.update { LlmSetupPhase.SELECTING }
         } else {
             _selectedLlmId.update {
                 memoryManager.getSelectedLlmId().ifBlank { LlmOption.CONFIGURED_MODEL.id }
@@ -1019,6 +1018,23 @@ class ChatViewModel @Inject constructor(
     // ── Initial LLM setup wizard actions ─────────────────────────────────────
 
     /**
+     * Called from the model selection UI when the user picks a model to install.
+     * Saves the selection, transitions to [LlmSetupPhase.DOWNLOADING] and begins
+     * the download. For built-in models the setup completes immediately.
+     */
+    fun selectModelForSetup(option: LlmOption) {
+        _selectedLlmId.update { option.id }
+        _llmSetupError.update { null }
+        viewModelScope.launch { memoryManager.setSelectedLlmId(option.id) }
+        if (option.isBuiltIn) {
+            finishLlmSetup(option)
+        } else {
+            _llmSetupPhase.update { LlmSetupPhase.DOWNLOADING }
+            modelDownloader.startDownload(option)
+        }
+    }
+
+    /**
      * Begins the initial setup flow.
      *
      * Uses [LlmOption.CONFIGURED_MODEL] by default so callers do not need to
@@ -1051,18 +1067,19 @@ class ChatViewModel @Inject constructor(
 
     /**
      * Cancels the current download (if any), deletes any partial files, and
-     * restarts the download for [LlmOption.CONFIGURED_MODEL] so the setup
+     * restarts the download for the currently selected model so the setup
      * screen stays in [LlmSetupPhase.DOWNLOADING] with a fresh attempt.
      */
     fun retryLlmSetup() {
+        val option = resolveSelectedLlmOption()
         // Set phase back to DOWNLOADING before cancelling so the download-completion
         // observer stays in the DOWNLOADING branch when the new attempt finishes.
         _llmSetupPhase.update { LlmSetupPhase.DOWNLOADING }
         _llmSetupError.update { null }
         modelDownloader.cancelDownload()
         viewModelScope.launch(Dispatchers.IO) {
-            modelDownloader.deleteModelFile(LlmOption.CONFIGURED_MODEL)
-            modelDownloader.startDownload(LlmOption.CONFIGURED_MODEL)
+            modelDownloader.deleteModelFile(option)
+            modelDownloader.startDownload(option)
         }
     }
 
@@ -1236,7 +1253,24 @@ class ChatViewModel @Inject constructor(
     /** Returns the expected on-device path for the LLM model file. */
     fun getModelFilePath(): String = responseEngine.modelFilePath()
 
-    fun getRecommendedLlmOption(): LlmOption = LlmOption.CONFIGURED_MODEL
+    fun getRecommendedLlmOption(): LlmOption =
+        deviceCapabilityDetector.recommendedOption()
+
+    /**
+     * Returns all available LLM options paired with their compatibility score for
+     * this device. Used by the setup screen to present a ranked model picker.
+     */
+    fun getAllLlmOptionsWithCompatibility() =
+        deviceCapabilityDetector.allOptionsWithCompatibility()
+
+    /** Device RAM in megabytes (used by the model selection UI). */
+    val deviceTotalRamMb: Int get() = deviceCapabilityDetector.totalRamMb
+
+    /** Device model name string (e.g. "Pixel 8 Pro"). */
+    val deviceModelName: String get() = deviceCapabilityDetector.model
+
+    /** SoC chipset name when available (e.g. "Tensor G3"). */
+    val deviceChipsetName: String get() = deviceCapabilityDetector.chipset
 
     /**
      * Installs a model file from [uri] (obtained via the system file picker),

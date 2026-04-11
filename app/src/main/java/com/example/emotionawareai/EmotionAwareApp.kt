@@ -36,11 +36,13 @@ class EmotionAwareApp : Application() {
             if (savedToken.isNotBlank()) {
                 modelDownloader.setHuggingFaceToken(savedToken)
             }
-            // Use the saved selection (for returning users) or the pre-configured model
-            // (SMOLLM2_135M) for new installs. Never fall back to device-specific detection.
-            val selectedOption = LlmOption.fromId(memoryManager.getSelectedLlmId())
-                ?: LlmOption.CONFIGURED_MODEL
-            modelDownloader.startDownloadIfAbsent(selectedOption)
+            // Only auto-start the download for returning users who already completed the
+            // model selection step. New users are sent to the selection screen first.
+            if (memoryManager.isLlmSetupComplete() == true) {
+                val selectedOption = LlmOption.fromId(memoryManager.getSelectedLlmId())
+                    ?: LlmOption.CONFIGURED_MODEL
+                modelDownloader.startDownloadIfAbsent(selectedOption)
+            }
         }
     }
 
