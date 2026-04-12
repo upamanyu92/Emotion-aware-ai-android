@@ -89,10 +89,11 @@ fun AgentPresenceAnimation(
     isListening: Boolean,
     isGenerating: Boolean,
     isSpeaking: Boolean,
+    modifier: Modifier = Modifier,
+    isCameraActive: Boolean = false,
     speechCaption: SpeechCaption?,
     captionsVisible: Boolean,
-    userName: String,
-    modifier: Modifier = Modifier
+    userName: String
 ) {
     val state = when {
         isListening -> AgentVisualState.LISTENING
@@ -100,6 +101,10 @@ fun AgentPresenceAnimation(
         isSpeaking -> AgentVisualState.SPEAKING
         else -> AgentVisualState.IDLE
     }
+
+    // When camera is active and the agent is idle, suppress the pulsing
+    // orb/ring animations and replace the "ear" icon with a camera-aware icon.
+    val suppressIdleAnimation = state == AgentVisualState.IDLE && isCameraActive
 
     val transition = rememberInfiniteTransition(label = "agent_presence")
     val orbScale by transition.animateFloat(
@@ -142,7 +147,7 @@ fun AgentPresenceAnimation(
             Box(
                 modifier = Modifier
                     .size(196.dp)
-                    .scale(ringScale)
+                    .scale(if (suppressIdleAnimation) 1f else ringScale)
                     .background(
                         Brush.radialGradient(
                             colors = listOf(
@@ -174,7 +179,13 @@ fun AgentPresenceAnimation(
                 Box(
                     modifier = Modifier
                         .size(126.dp)
-                        .scale(if (state == AgentVisualState.IDLE) 1f else orbScale)
+                        .scale(
+                            when {
+                                suppressIdleAnimation -> 1f
+                                state == AgentVisualState.IDLE -> 1f
+                                else -> orbScale
+                            }
+                        )
                         .background(
                             Brush.radialGradient(
                                 listOf(
@@ -189,11 +200,14 @@ fun AgentPresenceAnimation(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = when (state) {
-                            AgentVisualState.LISTENING -> Icons.Filled.Mic
-                            AgentVisualState.THINKING -> Icons.Filled.AutoAwesome
-                            AgentVisualState.SPEAKING -> Icons.Filled.GraphicEq
-                            AgentVisualState.IDLE -> Icons.Filled.Hearing
+                        imageVector = when {
+                            state == AgentVisualState.LISTENING -> Icons.Filled.Mic
+                            state == AgentVisualState.THINKING -> Icons.Filled.AutoAwesome
+                            state == AgentVisualState.SPEAKING -> Icons.Filled.GraphicEq
+                            // IDLE: show neutral icon when camera is active,
+                            // Hearing icon only when camera is off
+                            suppressIdleAnimation -> Icons.Filled.AutoAwesome
+                            else -> Icons.Filled.Hearing
                         },
                         contentDescription = null,
                         tint = state.accent,
@@ -209,10 +223,11 @@ fun AgentPresenceAnimation(
         ) {
             repeat(5) { index ->
                 val multiplier = 0.55f + (index % 3) * 0.18f
+                val effectiveBarAnim = if (suppressIdleAnimation) 0.5f else barAnim
                 Box(
                     modifier = Modifier
                         .width(10.dp)
-                        .height((18 + (32 * barAnim * multiplier)).dp)
+                        .height((18 + (32 * effectiveBarAnim * multiplier)).dp)
                         .background(
                             state.accent.copy(alpha = if (state == AgentVisualState.IDLE) 0.25f else 0.85f),
                             RoundedCornerShape(100)

@@ -1,11 +1,8 @@
 package com.example.emotionawareai
 
-import android.Manifest
-import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -14,10 +11,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.emotionawareai.ui.ChatViewModel
 import com.example.emotionawareai.ui.navigation.MainNavigation
+import com.example.emotionawareai.ui.screen.GetStartedScreen
 import com.example.emotionawareai.ui.screen.LlmSetupScreen
 import com.example.emotionawareai.ui.screen.LoginScreen
 import com.example.emotionawareai.ui.screen.SplashScreen
@@ -32,23 +29,12 @@ class MainActivity : ComponentActivity() {
     /** Tracks whether the boot splash has finished its animation. */
     private var splashFinished by mutableStateOf(false)
 
-    private val requiredPermissions = arrayOf(
-        Manifest.permission.CAMERA,
-        Manifest.permission.RECORD_AUDIO
-    )
-
-    private val permissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        val cameraGranted = permissions[Manifest.permission.CAMERA] == true
-        val audioGranted = permissions[Manifest.permission.RECORD_AUDIO] == true
-        viewModel.onPermissionsResult(cameraGranted = cameraGranted, audioGranted = audioGranted)
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        checkAndRequestPermissions()
+        // Permissions are no longer requested at startup.
+        // They are requested on-demand from ChatScreen when the user taps
+        // the mic (audio) or camera toggle button.
 
         setContent {
             val isProThemeEnabled by viewModel.isProThemeEnabled.collectAsStateWithLifecycle()
@@ -56,6 +42,7 @@ class MainActivity : ComponentActivity() {
             val hasProfile by viewModel.hasUserProfile.collectAsStateWithLifecycle()
             // null = not yet determined; false = not done; true = done
             val isLlmSetup by viewModel.isLlmSetupComplete.collectAsStateWithLifecycle()
+            val isGetStartedShown by viewModel.isGetStartedShown.collectAsStateWithLifecycle()
             val llmSetupPhase by viewModel.llmSetupPhase.collectAsStateWithLifecycle()
             val llmSetupError by viewModel.llmSetupError.collectAsStateWithLifecycle()
             val modelDownloadProgress by viewModel.modelDownloadProgress.collectAsStateWithLifecycle()
@@ -73,11 +60,19 @@ class MainActivity : ComponentActivity() {
                         }
 
                         // 2. Still loading prefs from Room
-                        isLlmSetup == null || hasProfile == null -> {
+                        isLlmSetup == null || hasProfile == null || isGetStartedShown == null -> {
                             /* Loading state — Surface stays dark */
                         }
 
-                        // 3. LLM selection not yet done → show setup screen
+                        // 3. Get Started carousel not yet shown
+                        isGetStartedShown == false -> {
+                            GetStartedScreen(
+                                onComplete = { viewModel.completeGetStarted() },
+                                onSkip = { viewModel.completeGetStarted() }
+                            )
+                        }
+
+                        // 4. LLM selection not yet done → show setup screen
                         isLlmSetup == false -> {
                             LlmSetupScreen(
                                 setupPhase = llmSetupPhase,
@@ -95,7 +90,7 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
-                        // 4. No user profile → onboarding / login
+                        // 5. No user profile → onboarding / login
                         hasProfile == false -> {
                             LoginScreen(
                                 onProfileCreated = { name, avatar ->
@@ -107,23 +102,11 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
-                        // 5. Everything ready → main app
+                        // 6. Everything ready → main app
                         else -> MainNavigation(viewModel = viewModel)
                     }
                 }
             }
-        }
-    }
-
-    private fun checkAndRequestPermissions() {
-        val missingPermissions = requiredPermissions.filter { permission ->
-            ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED
-        }
-
-        if (missingPermissions.isEmpty()) {
-            viewModel.onPermissionsResult(cameraGranted = true, audioGranted = true)
-        } else {
-            permissionLauncher.launch(missingPermissions.toTypedArray())
         }
     }
 }

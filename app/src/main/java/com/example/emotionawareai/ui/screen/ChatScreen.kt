@@ -1,10 +1,14 @@
 package com.example.emotionawareai.ui.screen
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.view.WindowManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
@@ -89,6 +93,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.emotionawareai.R
 import com.example.emotionawareai.domain.model.Emotion
@@ -142,6 +147,71 @@ fun ChatScreen(viewModel: ChatViewModel) {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var inputText by remember { mutableStateOf("") }
+
+    // ── On-demand permission launchers ────────────────────────────────────────
+    // Audio permission — requested when user taps mic / voice button
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        viewModel.onPermissionsResult(
+            cameraGranted = cameraGranted,
+            audioGranted = granted
+        )
+        if (granted) {
+            // User just granted audio; start voice input since they tapped the mic
+            viewModel.startVoiceInput()
+        }
+    }
+
+    // Camera permission — requested when user taps camera toggle
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        viewModel.onPermissionsResult(
+            cameraGranted = granted,
+            audioGranted = viewModel.audioPermissionGranted.value
+        )
+    }
+
+    /** Request audio permission if not yet granted, otherwise proceed directly. */
+    fun ensureAudioPermission(onGranted: () -> Unit) {
+        val alreadyGranted = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+        if (alreadyGranted) {
+            viewModel.onPermissionsResult(cameraGranted = cameraGranted, audioGranted = true)
+            onGranted()
+        } else {
+            audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    /** Request camera permission if not yet granted, otherwise proceed directly. */
+    fun ensureCameraPermission(onGranted: () -> Unit) {
+        val alreadyGranted = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+        if (alreadyGranted) {
+            viewModel.onPermissionsResult(cameraGranted = true, audioGranted = viewModel.audioPermissionGranted.value)
+            onGranted()
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    // Seed permission state from actual system grants (covers app restarts
+    // where permission was previously granted but ViewModel state was reset).
+    LaunchedEffect(Unit) {
+        val camGranted = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+        val micGranted = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+        if (camGranted || micGranted) {
+            viewModel.onPermissionsResult(cameraGranted = camGranted, audioGranted = micGranted)
+        }
+    }
 
     val cameraWallpaperVisible = cameraGranted && isCameraEnabled && isCameraPreviewVisible
 
@@ -227,7 +297,11 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 actions = {
                     IconButton(onClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        viewModel.toggleVoiceMode()
+                        if (!viewModel.audioPermissionGranted.value && !isVoiceModeActive) {
+                            ensureAudioPermission { viewModel.toggleVoiceMode() }
+                        } else {
+                            viewModel.toggleVoiceMode()
+                        }
                     }) {
                         Icon(
                             imageVector = Icons.Filled.Hearing,
@@ -237,7 +311,11 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     }
                     IconButton(onClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        viewModel.toggleContinuousConversation()
+                        if (!viewModel.audioPermissionGranted.value && !isContinuousConversationEnabled) {
+                            ensureAudioPermission { viewModel.toggleContinuousConversation() }
+                        } else {
+                            viewModel.toggleContinuousConversation()
+                        }
                     }) {
                         Icon(
                             imageVector = if (isContinuousConversationEnabled) Icons.Filled.MicOff else Icons.Filled.Mic,
@@ -388,6 +466,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     isListening = isListening,
                     isGenerating = isGenerating,
                     isSpeaking = isSpeaking,
+                    isCameraActive = isCameraEnabled && cameraGranted,
                     speechCaption = speechCaption,
                     captionsVisible = isCaptionsEnabled,
                     userName = userName,
@@ -414,7 +493,11 @@ fun ChatScreen(viewModel: ChatViewModel) {
                         active = isContinuousConversationEnabled,
                         onClick = {
                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            viewModel.toggleContinuousConversation()
+                            if (!viewModel.audioPermissionGranted.value && !isContinuousConversationEnabled) {
+                                ensureAudioPermission { viewModel.toggleContinuousConversation() }
+                            } else {
+                                viewModel.toggleContinuousConversation()
+                            }
                         }
                     )
                     NeoChip(
@@ -429,7 +512,12 @@ fun ChatScreen(viewModel: ChatViewModel) {
                         active = isCameraEnabled && cameraGranted,
                         onClick = {
                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            viewModel.toggleCamera()
+                            if (!cameraGranted && !isCameraEnabled) {
+                                // Camera is off and permission not yet granted — request permission first
+                                ensureCameraPermission { viewModel.toggleCamera() }
+                            } else {
+                                viewModel.toggleCamera()
+                            }
                         }
                     )
                     if (isCameraEnabled && cameraGranted) {
@@ -511,7 +599,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
                         isListening = isListening,
                         onStartListening = {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            viewModel.startVoiceInput()
+                            ensureAudioPermission { viewModel.startVoiceInput() }
                         },
                         onStopListening = {
                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)

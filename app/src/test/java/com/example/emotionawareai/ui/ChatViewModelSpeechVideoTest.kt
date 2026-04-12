@@ -205,13 +205,15 @@ class ChatViewModelSpeechVideoTest {
     }
 
     @Test
-    fun `audio permission with continuous mode enabled starts continuous listening`() = runTest {
+    fun `audio permission with continuous mode does not auto-start listening`() = runTest {
         advanceUntilIdle()
 
-        // With continuous mode on (default true), granting audio should auto-start
+        // Permissions are now requested on-demand; granting permission alone
+        // does NOT auto-start continuous voice (user must tap mic button).
         viewModel.onPermissionsResult(cameraGranted = false, audioGranted = true)
+        advanceUntilIdle()
 
-        verify(atLeast = 1) { voiceProcessor.startContinuousListening(any()) }
+        verify(exactly = 0) { voiceProcessor.startContinuousListening(any()) }
     }
 
     @Test
@@ -254,10 +256,11 @@ class ChatViewModelSpeechVideoTest {
         verify(atLeast = 1) { voiceProcessor.stopContinuousListening() }
         coVerify { memoryManager.setContinuousConversationEnabled(false) }
 
-        // Toggle back on
+        // Toggle back on — this is the only startContinuousListening call
+        // since onPermissionsResult no longer auto-starts voice.
         viewModel.toggleContinuousConversation()
         advanceUntilIdle()
-        verify(atLeast = 2) { voiceProcessor.startContinuousListening(any()) }
+        verify(atLeast = 1) { voiceProcessor.startContinuousListening(any()) }
         coVerify { memoryManager.setContinuousConversationEnabled(true) }
     }
 
@@ -288,7 +291,7 @@ class ChatViewModelSpeechVideoTest {
 
         // Before any camera frame is processed, currentEmotion must be UNKNOWN
         // (not NEUTRAL) so that audio-tone emotion can take over in effectiveEmotion.
-        assertEquals(com.example.emotionawareai.domain.model.Emotion.UNKNOWN, viewModel.currentEmotion.value)
+        assertEquals(Emotion.UNKNOWN, viewModel.currentEmotion.value)
     }
 
     @Test
@@ -302,7 +305,6 @@ class ChatViewModelSpeechVideoTest {
         }
         coEvery { conversationManager.saveMessage(any()) } answers {
             callOrder += "saveMessage"
-            1L
         }
 
         viewModel.sendMessage("test message")

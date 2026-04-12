@@ -55,7 +55,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /** Represents the lifecycle of an in-app model file installation. */
@@ -63,7 +62,7 @@ enum class ModelInstallState { IDLE, INSTALLING, SUCCESS, ERROR }
 
 /**
  * Represents the current phase of the initial LLM setup flow shown on the
- * [LlmSetupScreen]. Only meaningful while [isLlmSetupComplete] is false.
+ * `LlmSetupScreen`. Only meaningful while `isLlmSetupComplete` is false.
  */
 enum class LlmSetupPhase {
     /** User is choosing which AI model to install. */
@@ -114,6 +113,7 @@ class ChatViewModel @Inject constructor(
     val currentEmotion: StateFlow<Emotion> = _currentEmotion.asStateFlow()
 
     private val _audioToneEmotion = MutableStateFlow(Emotion.UNKNOWN)
+    @Suppress("unused") // Collected by Compose UI
     val audioToneEmotion: StateFlow<Emotion> = _audioToneEmotion.asStateFlow()
 
     private val _effectiveEmotion = MutableStateFlow(Emotion.NEUTRAL)
@@ -123,6 +123,7 @@ class ChatViewModel @Inject constructor(
     val toneInsight: StateFlow<ToneInsight?> = _toneInsight.asStateFlow()
 
     private val _activityCaptions = MutableStateFlow<List<ActivityCaption>>(emptyList())
+    @Suppress("unused") // Collected by Compose UI
     val activityCaptions: StateFlow<List<ActivityCaption>> = _activityCaptions.asStateFlow()
 
     private val _isListening = MutableStateFlow(false)
@@ -203,39 +204,47 @@ class ChatViewModel @Inject constructor(
     val isPremiumUser: StateFlow<Boolean> = _isPremiumUser.asStateFlow()
 
     private val _isBillingReady = MutableStateFlow(false)
+    @Suppress("unused") // Collected by Compose UI
     val isBillingReady: StateFlow<Boolean> = _isBillingReady.asStateFlow()
 
     private val _isAiAgentActive = MutableStateFlow(false)
+    @Suppress("unused") // Collected by Compose UI
     val isAiAgentActive: StateFlow<Boolean> = _isAiAgentActive.asStateFlow()
 
     private val _premiumOffers = MutableStateFlow<List<PremiumOffer>>(emptyList())
+    @Suppress("unused") // Collected by Compose UI
     val premiumOffers: StateFlow<List<PremiumOffer>> = _premiumOffers.asStateFlow()
 
     private val _isPurchaseInProgress = MutableStateFlow(false)
+    @Suppress("unused") // Collected by Compose UI
     val isPurchaseInProgress: StateFlow<Boolean> = _isPurchaseInProgress.asStateFlow()
 
     private val _isRestoreInProgress = MutableStateFlow(false)
+    @Suppress("unused") // Collected by Compose UI
     val isRestoreInProgress: StateFlow<Boolean> = _isRestoreInProgress.asStateFlow()
 
     private val _isProThemeEnabled = MutableStateFlow(false)
     val isProThemeEnabled: StateFlow<Boolean> = _isProThemeEnabled.asStateFlow()
 
     private val _isExportWithInsights = MutableStateFlow(true)
+    @Suppress("unused") // Collected by Compose UI
     val isExportWithInsights: StateFlow<Boolean> = _isExportWithInsights.asStateFlow()
 
     private val _exportPayload = MutableStateFlow<String?>(null)
     val exportPayload: StateFlow<String?> = _exportPayload.asStateFlow()
 
     private val _premiumFeatureMatrix = MutableStateFlow(buildPremiumMatrix(true))
+    @Suppress("unused") // Collected by Compose UI
     val premiumFeatureMatrix: StateFlow<Map<PremiumFeature, Boolean>> =
         _premiumFeatureMatrix.asStateFlow()
 
     /**
      * Remote kill-switch for all premium features.
-     * Defaults to [true] so every user gets free access to all features.
-     * Can be set to [false] via [setPremiumFeaturesEnabled] to re-gate features remotely.
+     * Defaults to `true` so every user gets free access to all features.
+     * Can be set to `false` via [setPremiumFeaturesEnabled] to re-gate features remotely.
      */
     private val _premiumFeaturesGloballyEnabled = MutableStateFlow(true)
+    @Suppress("unused") // Collected by Compose UI
     val premiumFeaturesGloballyEnabled: StateFlow<Boolean> =
         _premiumFeaturesGloballyEnabled.asStateFlow()
 
@@ -260,6 +269,12 @@ class ChatViewModel @Inject constructor(
      */
     private val _isLlmSetupComplete = MutableStateFlow<Boolean?>(null)
     val isLlmSetupComplete: StateFlow<Boolean?> = _isLlmSetupComplete.asStateFlow()
+
+    /**
+     * Null = not yet checked. False = not shown. True = shown/skipped.
+     */
+    private val _isGetStartedShown = MutableStateFlow<Boolean?>(null)
+    val isGetStartedShown: StateFlow<Boolean?> = _isGetStartedShown.asStateFlow()
 
     private val _selectedLlmId = MutableStateFlow("")
     val selectedLlmId: StateFlow<String> = _selectedLlmId.asStateFlow()
@@ -292,6 +307,7 @@ class ChatViewModel @Inject constructor(
     val activeGoals: StateFlow<List<SessionGoal>> = _activeGoals.asStateFlow()
 
     private val _weeklyInsight = MutableStateFlow<WeeklyInsight?>(null)
+    @Suppress("unused") // Collected by Compose UI (InsightsScreen)
     val weeklyInsight: StateFlow<WeeklyInsight?> = _weeklyInsight.asStateFlow()
 
     private val _insights = MutableStateFlow<List<WeeklyInsight>>(emptyList())
@@ -328,6 +344,7 @@ class ChatViewModel @Inject constructor(
 
     /** Currently shown feedback sheet for this message ID, null when hidden. */
     private val _feedbackTargetMessageId = MutableStateFlow<Long?>(null)
+    @Suppress("unused") // Collected by Compose UI (FeedbackSheet)
     val feedbackTargetMessageId: StateFlow<Long?> = _feedbackTargetMessageId.asStateFlow()
 
     // ── Diary State ──────────────────────────────────────────────────────────
@@ -425,6 +442,10 @@ class ChatViewModel @Inject constructor(
         // Load LLM setup state
         val llmSetup = memoryManager.isLlmSetupComplete()
         _isLlmSetupComplete.update { llmSetup }
+
+        // Load Get Started carousel state
+        val getStartedShown = memoryManager.isGetStartedShown()
+        _isGetStartedShown.update { getStartedShown }
         if (llmSetup == false) {
             // New user: show the model selection screen so they can choose the AI
             // that best fits their device before any download is triggered.
@@ -917,14 +938,17 @@ class ChatViewModel @Inject constructor(
         billingManager.launchUpgradeFlow(activity, planType)
     }
 
+    @Suppress("unused") // Called from Compose UI (SettingsScreen)
     fun restorePurchases() {
         billingManager.restorePurchases()
     }
 
+    @Suppress("unused") // Called from Compose UI (SettingsScreen)
     fun retryBillingConnection() {
         billingManager.retryConnection()
     }
 
+    @Suppress("unused") // Called from Compose UI (SettingsScreen)
     fun toggleProTheme() {
         if (!hasPremiumFeature(PremiumFeature.PRO_THEMES)) {
             _errorMessage.update { "Pro themes are currently disabled." }
@@ -937,6 +961,7 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    @Suppress("unused") // Called from Compose UI (SettingsScreen)
     fun toggleExportInsights() {
         val enabled = !_isExportWithInsights.value
         _isExportWithInsights.update { enabled }
@@ -945,6 +970,7 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    @Suppress("unused") // Called from Compose UI (ChatScreen export action)
     fun prepareExportPayload() {
         if (!hasPremiumFeature(PremiumFeature.EXPORT_CHAT)) {
             _errorMessage.update { "Export is currently disabled." }
@@ -1068,6 +1094,15 @@ class ChatViewModel @Inject constructor(
     }
 
     /**
+     * Marks the Get Started onboarding carousel as completed/skipped and
+     * transitions to the next boot-flow screen.
+     */
+    fun completeGetStarted() {
+        _isGetStartedShown.update { true }
+        viewModelScope.launch { memoryManager.setGetStartedShown() }
+    }
+
+    /**
      * Cancels the current download (if any), deletes any partial files, and
      * restarts the download for the currently selected model so the setup
      * screen stays in [LlmSetupPhase.DOWNLOADING] with a fresh attempt.
@@ -1154,6 +1189,7 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch { memoryManager.deleteGoal(id) }
     }
 
+    @Suppress("unused") // Called from Compose UI (GoalsScreen)
     fun updateGoalProgress(id: Long, note: String) {
         viewModelScope.launch { memoryManager.updateGoalProgress(id, note) }
     }
@@ -1206,6 +1242,7 @@ class ChatViewModel @Inject constructor(
     /**
      * Updates the user's display name.
      */
+    @Suppress("unused") // Called from Compose UI (SettingsScreen)
     fun updateUserName(name: String) {
         val trimmedName = name.trim()
         if (trimmedName.isBlank()) return
@@ -1216,6 +1253,7 @@ class ChatViewModel @Inject constructor(
     /**
      * Updates the user's avatar emoji.
      */
+    @Suppress("unused") // Called from Compose UI (SettingsScreen)
     fun updateUserAvatar(avatar: String) {
         _userAvatar.update { avatar }
         viewModelScope.launch { memoryManager.setUserAvatar(avatar) }
@@ -1232,10 +1270,9 @@ class ChatViewModel @Inject constructor(
             activityAnalyzer.initialize()
         }
 
-        // Auto-start continuous voice if permission granted and mode is enabled
-        if (audioGranted && _isContinuousConversationEnabled.value && !_isListening.value) {
-            voiceProcessor.startContinuousListening()
-        }
+        // Do NOT auto-start continuous voice here. Permissions are now requested
+        // on-demand when the user taps the mic/talk button, so the user explicitly
+        // triggers voice input from the UI after granting permission.
     }
 
     /**
@@ -1255,6 +1292,7 @@ class ChatViewModel @Inject constructor(
     /** Returns the expected on-device path for the LLM model file. */
     fun getModelFilePath(): String = responseEngine.modelFilePath()
 
+    @Suppress("unused") // Called from Compose UI (LlmSetupScreen)
     fun getRecommendedLlmOption(): LlmOption =
         deviceCapabilityDetector.recommendedOption()
 
@@ -1621,15 +1659,18 @@ class ChatViewModel @Inject constructor(
     // ── Feedback Actions ─────────────────────────────────────────────────────
 
     /** Shows the feedback bottom sheet for a given assistant message. */
+    @Suppress("unused") // Called from Compose UI (EvaluationScreen)
     fun showFeedbackSheet(messageId: Long) {
         _feedbackTargetMessageId.update { messageId }
     }
 
+    @Suppress("unused") // Called from Compose UI (EvaluationScreen)
     fun dismissFeedbackSheet() {
         _feedbackTargetMessageId.update { null }
     }
 
     /** Submits user feedback for an assistant message and forwards to Langfuse. */
+    @Suppress("unused") // Called from Compose UI (EvaluationScreen)
     fun submitFeedback(messageId: Long, rating: Int, comment: String) {
         _feedbackTargetMessageId.update { null }
         viewModelScope.launch {
@@ -1705,15 +1746,6 @@ class ChatViewModel @Inject constructor(
             // Use the LLM to generate a summary if the model is loaded,
             // otherwise create a simple concatenated summary.
             val summary = if (_isModelLoaded.value) {
-                val prompt = buildString {
-                    append("[SYSTEM] You are a helpful diary summarizer. ")
-                    append("Summarize the following transcribed speech into a clear, ")
-                    append("comprehensive daily diary entry. Capture the key events, ")
-                    append("emotions, and themes.\n\n")
-                    append("[USER] Here are my transcribed thoughts from today:\n")
-                    append(allText)
-                    append("\n\n[ASSISTANT] ")
-                }
                 val sb = StringBuilder()
                 responseEngine.generateResponse(
                     com.example.emotionawareai.domain.model.ConversationContext(

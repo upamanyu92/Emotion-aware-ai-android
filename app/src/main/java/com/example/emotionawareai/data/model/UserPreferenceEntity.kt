@@ -16,11 +16,9 @@ data class UserPreferenceEntity(
         const val KEY_CAMERA_ENABLED = "camera_enabled"
         const val KEY_CONTINUOUS_CONVERSATION_ENABLED = "continuous_conversation_enabled"
         const val KEY_PREMIUM_UNLOCKED = "premium_unlocked"
-        const val KEY_PREMIUM_NUDGE_SHOWN = "premium_nudge_shown"
         const val KEY_PRO_THEME_ENABLED = "pro_theme_enabled"
         const val KEY_EXPORT_WITH_INSIGHTS = "export_with_insights"
         const val KEY_CONVERSATION_ID = "active_conversation_id"
-        const val KEY_FONT_SIZE = "font_size"
         /** Remote-config kill-switch: when false, all premium features are disabled. */
         const val KEY_PREMIUM_FEATURES_GLOBALLY_ENABLED = "premium_features_globally_enabled"
         /** User profile: display name entered at login. */
@@ -49,8 +47,10 @@ data class UserPreferenceEntity(
         const val KEY_PIPER_VOICE = "piper_voice"
         /** Whether the LLM setup has been completed. */
         const val KEY_LLM_SETUP_COMPLETE = "llm_setup_complete"
-        /** ID of the selected LLM option (matches [LlmOption.id]). */
+        /** ID of the selected LLM option (matches `LlmOption.id`). */
         const val KEY_SELECTED_LLM_ID = "selected_llm_id"
+        /** Whether the "Get Started" onboarding carousel has been shown/skipped. */
+        const val KEY_GET_STARTED_SHOWN = "get_started_shown"
         // NOTE: The HuggingFace access token is NOT stored here.
         // It is kept in SecureTokenStorage (EncryptedSharedPreferences + Android Keystore).
     }

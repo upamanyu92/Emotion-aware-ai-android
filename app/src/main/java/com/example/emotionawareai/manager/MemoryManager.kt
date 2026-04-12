@@ -5,7 +5,6 @@ import com.example.emotionawareai.data.database.SessionGoalDao
 import com.example.emotionawareai.data.model.SessionGoalEntity
 import com.example.emotionawareai.data.model.UserPreferenceEntity
 import com.example.emotionawareai.domain.model.ChatMessage
-import com.example.emotionawareai.domain.model.Emotion
 import com.example.emotionawareai.domain.model.GrowthArea
 import com.example.emotionawareai.domain.model.SessionGoal
 import com.example.emotionawareai.domain.model.PiperVoice
@@ -48,11 +47,12 @@ class MemoryManager @Inject constructor(
     /**
      * Observes live message updates for [conversationId].
      */
+    @Suppress("unused") // Public API – retained for symmetry with getRecentContext
     fun observeMessages(conversationId: Long): Flow<List<ChatMessage>> =
         repository.getMessagesForConversation(conversationId).flowOn(Dispatchers.IO)
 
     /**
-     * Persists a [preference] key-value pair.
+     * Persists a key-value pair as a user preference.
      */
     suspend fun savePreference(key: String, value: String) = withContext(Dispatchers.IO) {
         repository.savePreference(key, value)
@@ -69,6 +69,7 @@ class MemoryManager @Inject constructor(
     /**
      * Observes live updates for a single preference key.
      */
+    @Suppress("unused") // Public API – retained for symmetry with getPreference
     fun observePreference(key: String): Flow<String?> =
         repository.observePreference(key).flowOn(Dispatchers.IO)
 
@@ -209,21 +210,6 @@ class MemoryManager @Inject constructor(
         savePreference(UserPreferenceEntity.KEY_USER_AVATAR, emoji)
     }
 
-    /**
-     * Returns the dominant emotion across the last [limit] user messages.
-     */
-    suspend fun inferDominantEmotion(
-        conversationId: Long,
-        limit: Int = 10
-    ): Emotion = withContext(Dispatchers.IO) {
-        val messages = repository.getRecentMessages(conversationId, limit)
-        messages
-            .filter { it.isFromUser }
-            .groupingBy { it.emotion }
-            .eachCount()
-            .maxByOrNull { it.value }
-            ?.key ?: Emotion.NEUTRAL
-    }
 
     // ── Growth goals helpers ──────────────────────────────────────────────────
 
@@ -232,9 +218,6 @@ class MemoryManager @Inject constructor(
             .map { list -> list.map { it.toGoal() } }
             .flowOn(Dispatchers.IO)
 
-    suspend fun getActiveGoals(): List<SessionGoal> = withContext(Dispatchers.IO) {
-        sessionGoalDao.getActiveGoals().map { it.toGoal() }
-    }
 
     suspend fun addGoal(title: String, area: GrowthArea): Long = withContext(Dispatchers.IO) {
         sessionGoalDao.insert(SessionGoalEntity(title = title, growthArea = area.name))
@@ -294,8 +277,6 @@ class MemoryManager @Inject constructor(
         savePreference(UserPreferenceEntity.KEY_PRIVACY_NOTICE_SHOWN, "true")
     }
 
-    suspend fun isOnboardingComplete(): Boolean =
-        getPreference(UserPreferenceEntity.KEY_ONBOARDING_COMPLETE, "false").toBoolean()
 
     suspend fun setOnboardingComplete() {
         savePreference(UserPreferenceEntity.KEY_ONBOARDING_COMPLETE, "true")
@@ -320,6 +301,16 @@ class MemoryManager @Inject constructor(
     suspend fun setSelectedLlmId(id: String) {
         Log.i(TAG, "setSelectedLlmId: $id")
         savePreference(UserPreferenceEntity.KEY_SELECTED_LLM_ID, id)
+    }
+
+    /** Returns `true` when the user has seen/skipped the Get Started carousel. */
+    suspend fun isGetStartedShown(): Boolean =
+        getPreference(UserPreferenceEntity.KEY_GET_STARTED_SHOWN, "false").toBoolean()
+
+    /** Marks the Get Started carousel as shown. */
+    suspend fun setGetStartedShown() {
+        Log.i(TAG, "setGetStartedShown")
+        savePreference(UserPreferenceEntity.KEY_GET_STARTED_SHOWN, "true")
     }
 
     // ── HuggingFace token helpers ──────────────────────────────────────────────
