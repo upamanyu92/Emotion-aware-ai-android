@@ -31,7 +31,8 @@ class EmotionDetector @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     private var faceLandmarker: FaceLandmarker? = null
-    private val analysisExecutor = Executors.newSingleThreadExecutor()
+    // `var` so it can be recreated after a `release()` call in the same singleton lifetime.
+    private var analysisExecutor = Executors.newSingleThreadExecutor()
 
     private val _emotionFlow = MutableSharedFlow<Emotion>(
         replay = 1,
@@ -50,6 +51,11 @@ class EmotionDetector @Inject constructor(
      */
     fun initialize() {
         if (isInitialized) return
+
+        // Recreate the executor if a prior release() shut it down.
+        if (analysisExecutor.isShutdown) {
+            analysisExecutor = Executors.newSingleThreadExecutor()
+        }
 
         runCatching {
             val baseOptions = BaseOptions.builder()

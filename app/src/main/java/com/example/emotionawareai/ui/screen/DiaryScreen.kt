@@ -48,6 +48,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,12 +57,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.app.Activity
+import android.view.WindowManager
 import com.example.emotionawareai.ui.ChatViewModel
 import com.example.emotionawareai.ui.theme.GlassBorder
 import com.example.emotionawareai.ui.theme.GlassCard
@@ -85,6 +90,30 @@ fun DiaryScreen(viewModel: ChatViewModel) {
     val diarySummary by viewModel.diarySummary.collectAsStateWithLifecycle()
     val diaryDates by viewModel.diaryDates.collectAsStateWithLifecycle()
     val isSummaryGenerating by viewModel.isDiarySummaryGenerating.collectAsStateWithLifecycle()
+
+    val activity = LocalContext.current as? Activity
+
+    // Stop diary listening when the user navigates away from this screen so the
+    // mic is not left open in the background consuming battery and conflicting
+    // with other screens.
+    DisposableEffect(Unit) {
+        onDispose { viewModel.stopDiaryListening() }
+    }
+
+    // Keep the screen on while diary recording is in progress so the device
+    // does not lock mid-session and lose captured speech.
+    LaunchedEffect(isDiaryListening) {
+        if (isDiaryListening) {
+            activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
 
     val pulseTransition = rememberInfiniteTransition(label = "pulse")
     val pulseScale by pulseTransition.animateFloat(

@@ -172,7 +172,8 @@ class ChatViewModelTest {
     fun initialState_hasEmptyMessages_andNeutralEmotion() = runTest {
         testDispatcher.scheduler.advanceUntilIdle()
         assertTrue(viewModel.messages.value.isEmpty())
-        assertEquals(Emotion.NEUTRAL, viewModel.currentEmotion.value)
+        assertEquals(Emotion.UNKNOWN, viewModel.currentEmotion.value)
+        assertEquals(Emotion.NEUTRAL, viewModel.effectiveEmotion.value)
         assertFalse(viewModel.isListening.value)
         assertFalse(viewModel.isGenerating.value)
     }

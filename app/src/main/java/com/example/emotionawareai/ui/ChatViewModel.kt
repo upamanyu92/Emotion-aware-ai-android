@@ -553,7 +553,9 @@ class ChatViewModel @Inject constructor(
     private fun observeVoiceRecognition() {
         viewModelScope.launch {
             voiceProcessor.recognizedTextFlow.collect { text ->
-                if (text.isNotBlank()) {
+                // When the AI Diary is capturing voice, route all recognised text to
+                // the diary flow only — do NOT send it to the chat engine.
+                if (text.isNotBlank() && !_isDiaryListening.value) {
                     // Stop any ongoing TTS so the AI doesn't hear its own response.
                     responseEngine.stopSpeaking()
                     sendMessage(text, fromVoiceInput = true)
@@ -1668,6 +1670,14 @@ class ChatViewModel @Inject constructor(
             voiceProcessor.recognizedTextFlow.collect { text ->
                 if (text.isNotBlank() && _isDiaryListening.value) {
                     saveDiaryEntry(text)
+                    // VoiceProcessor does NOT auto-restart after a successful result in
+                    // continuous mode (it leaves restart responsibility to the ViewModel).
+                    // For the diary we want the mic to stay live indefinitely, so we
+                    // schedule an explicit restart after a short pause.
+                    delay(DIARY_MIC_RESTART_DELAY_MS)
+                    if (_isDiaryListening.value) {
+                        voiceProcessor.startContinuousListening()
+                    }
                 }
             }
         }
@@ -1789,5 +1799,8 @@ class ChatViewModel @Inject constructor(
 
         /** Polling interval while waiting for TTS to finish. */
         private const val TTS_POLL_INTERVAL_MS = 100L
+
+        /** Delay before restarting the mic after a successful diary speech result. */
+        private const val DIARY_MIC_RESTART_DELAY_MS = 350L
     }
 }

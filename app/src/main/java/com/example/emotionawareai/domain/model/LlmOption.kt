@@ -30,6 +30,7 @@ data class LlmOption(
     val downloadUrl: String? = null,
     val modelFileName: String = "model.gguf",
     val requiresWarning: Boolean = false,
+    val requiresHuggingFaceToken: Boolean = false,
     val parameterLabel: String = "",
     val idealUseCase: String = ""
 ) {
@@ -113,6 +114,7 @@ data class LlmOption(
             qualityRating = 4,
             downloadUrl = "https://huggingface.co/google/gemma-2b-it-GGUF/resolve/main/gemma-2b-it-q4_k_m.gguf",
             modelFileName = "model.gguf",
+            requiresHuggingFaceToken = true,
             parameterLabel = "2B params",
             idealUseCase = "Balanced daily companion — good quality without high RAM"
         )
@@ -158,6 +160,7 @@ data class LlmOption(
             qualityRating = 5,
             downloadUrl = "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf",
             modelFileName = "model.gguf",
+            requiresHuggingFaceToken = true,
             parameterLabel = "3.8B params",
             idealUseCase = "Deep emotional reasoning and logical self-reflection"
         )
@@ -206,6 +209,7 @@ data class LlmOption(
             downloadUrl = "https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/resolve/main/mistral-7b-instruct-v0.2.Q4_K_M.gguf",
             modelFileName = "model.gguf",
             requiresWarning = true,
+            requiresHuggingFaceToken = true,
             parameterLabel = "7B params",
             idealUseCase = "Rich, nuanced emotional conversations and journaling support"
         )

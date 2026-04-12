@@ -40,7 +40,8 @@ class ActivityAnalyzer @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     private var poseLandmarker: PoseLandmarker? = null
-    private val analysisExecutor = Executors.newSingleThreadExecutor()
+    // `var` so it can be recreated after a `release()` call in the same singleton lifetime.
+    private var analysisExecutor = Executors.newSingleThreadExecutor()
 
     private val _captionFlow = MutableSharedFlow<List<ActivityCaption>>(
         replay = 1,
@@ -62,6 +63,12 @@ class ActivityAnalyzer @Inject constructor(
      */
     fun initialize() {
         if (isInitialized) return
+
+        // Recreate the executor if a prior release() shut it down.
+        if (analysisExecutor.isShutdown) {
+            analysisExecutor = Executors.newSingleThreadExecutor()
+        }
+
         runCatching {
             val baseOptions = BaseOptions.builder()
                 .setModelAssetPath(POSE_LANDMARKER_MODEL)

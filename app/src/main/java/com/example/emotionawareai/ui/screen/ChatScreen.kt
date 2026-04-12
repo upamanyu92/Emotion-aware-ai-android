@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
 import android.graphics.Bitmap
+import android.view.WindowManager
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
@@ -41,6 +42,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.ClosedCaptionDisabled
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Hearing
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
@@ -53,6 +55,7 @@ import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -88,6 +91,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.emotionawareai.R
+import com.example.emotionawareai.domain.model.Emotion
 import com.example.emotionawareai.ui.ChatViewModel
 import com.example.emotionawareai.ui.component.AgentPresenceAnimation
 import com.example.emotionawareai.ui.component.DailyCheckInSheet
@@ -102,6 +106,7 @@ import com.example.emotionawareai.ui.theme.GradMid2
 import com.example.emotionawareai.ui.theme.GradStart
 import com.example.emotionawareai.ui.theme.NeonCyan
 import com.example.emotionawareai.ui.theme.NeonPurple
+import com.example.emotionawareai.ui.theme.NeonRose
 import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
 
@@ -109,6 +114,8 @@ import java.util.concurrent.Executors
 @Composable
 fun ChatScreen(viewModel: ChatViewModel) {
     val effectiveEmotion by viewModel.effectiveEmotion.collectAsStateWithLifecycle()
+    val currentEmotion by viewModel.currentEmotion.collectAsStateWithLifecycle()
+    val toneInsight by viewModel.toneInsight.collectAsStateWithLifecycle()
     val isListening by viewModel.isListening.collectAsStateWithLifecycle()
     val isGenerating by viewModel.isGenerating.collectAsStateWithLifecycle()
     val isSpeaking by viewModel.isSpeaking.collectAsStateWithLifecycle()
@@ -129,11 +136,29 @@ fun ChatScreen(viewModel: ChatViewModel) {
     val showDailyCheckIn by viewModel.showDailyCheckIn.collectAsStateWithLifecycle()
     val showPrivacyNotice by viewModel.showPrivacyNotice.collectAsStateWithLifecycle()
 
-    val activity = LocalContext.current as? Activity
+    val context = LocalContext.current
+    val activity = context as? Activity
     val haptics = LocalHapticFeedback.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var inputText by remember { mutableStateOf("") }
+
+    val cameraWallpaperVisible = cameraGranted && isCameraEnabled && isCameraPreviewVisible
+
+    // ── Keep screen on while camera or mic is actively used ───────────────────
+    val shouldKeepScreenOn = (cameraGranted && isCameraEnabled) || isListening
+    LaunchedEffect(shouldKeepScreenOn) {
+        if (shouldKeepScreenOn) {
+            activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
 
     // Pause mic/camera/TTS when the user navigates away from this screen and
     // resume the last user-configured state when they return.
@@ -161,7 +186,6 @@ fun ChatScreen(viewModel: ChatViewModel) {
         viewModel.clearExportPayload()
     }
 
-    val cameraWallpaperVisible = cameraGranted && isCameraEnabled && isCameraPreviewVisible
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -330,7 +354,32 @@ fun ChatScreen(viewModel: ChatViewModel) {
                         icon = if (cameraWallpaperVisible) Icons.Filled.CameraAlt else Icons.Filled.VideocamOff
                     )
                     Spacer(modifier = Modifier.weight(1f))
+                    // Face-source emotion pill (camera signal only)
+                    if (cameraGranted && isCameraEnabled &&
+                        currentEmotion != Emotion.UNKNOWN && currentEmotion != Emotion.NEUTRAL
+                    ) {
+                        EmotionIndicator(emotion = currentEmotion)
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    // Effective / combined emotion indicator (always visible)
                     EmotionIndicator(emotion = effectiveEmotion)
+                }
+
+                // Voice pitch / tone insight chip — shown while mic is active
+                AnimatedVisibility(
+                    visible = isListening && toneInsight != null,
+                    enter = fadeIn(),
+                    exit = fadeOut()
+                ) {
+                    toneInsight?.let { tone ->
+                        VoicePitchChip(
+                            label = tone.label,
+                            energy = tone.energy,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp)
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.weight(1f))
@@ -578,6 +627,49 @@ private fun NeoChip(
             borderColor = if (active) NeonPurple.copy(alpha = 0.42f) else GlassBorder
         )
     )
+}
+
+/**
+ * Compact chip that shows voice tone label + an energy bar derived from microphone RMS.
+ * Shown in the status row while the mic is actively listening.
+ */
+@Composable
+private fun VoicePitchChip(
+    label: String,
+    energy: Float,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(NeonRose.copy(alpha = 0.10f))
+            .border(1.dp, NeonRose.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Filled.GraphicEq,
+            contentDescription = null,
+            tint = NeonRose,
+            modifier = Modifier.size(14.dp)
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = NeonRose,
+            fontWeight = FontWeight.SemiBold
+        )
+        LinearProgressIndicator(
+            progress = { energy.coerceIn(0f, 1f) },
+            modifier = Modifier
+                .weight(1f)
+                .height(4.dp)
+                .clip(RoundedCornerShape(2.dp)),
+            color = NeonRose,
+            trackColor = NeonRose.copy(alpha = 0.15f)
+        )
+    }
 }
 
 @androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)

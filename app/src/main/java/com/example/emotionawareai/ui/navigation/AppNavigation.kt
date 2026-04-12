@@ -30,6 +30,7 @@ import com.example.emotionawareai.ui.screen.ChatScreen
 import com.example.emotionawareai.ui.screen.DiaryScreen
 import com.example.emotionawareai.ui.screen.EvaluationScreen
 import com.example.emotionawareai.ui.screen.GoalsScreen
+import com.example.emotionawareai.ui.screen.HuggingFaceLoginScreen
 import com.example.emotionawareai.ui.screen.InsightsScreen
 import com.example.emotionawareai.ui.screen.SettingsScreen
 import com.example.emotionawareai.ui.theme.NeonCyan
@@ -42,6 +43,7 @@ sealed class AppRoute(val route: String, val label: String) {
     object Goals : AppRoute("goals", "Goals")
     object Evaluation : AppRoute("evaluation", "AI Eval")
     object Settings : AppRoute("settings", "Profile")
+    object HfLogin : AppRoute("hf_login", "HuggingFace Login")
 }
 
 @Composable
@@ -50,6 +52,7 @@ fun MainNavigation(viewModel: ChatViewModel) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
 
+    // Only the tab-bar destinations are listed here; HfLogin is a push destination.
     val tabs = listOf(
         Triple(AppRoute.Chat, Icons.AutoMirrored.Filled.Chat, "Home"),
         Triple(AppRoute.Diary, Icons.Filled.AutoAwesome, "Diary"),
@@ -59,45 +62,51 @@ fun MainNavigation(viewModel: ChatViewModel) {
         Triple(AppRoute.Settings, Icons.Filled.Person, "Profile")
     )
 
+    // Hide the bottom nav bar when the user is on the HF login screen.
+    val showBottomBar = currentDestination?.route != AppRoute.HfLogin.route
+
     Scaffold(
         containerColor = Color.Transparent,
         bottomBar = {
-            NavigationBar(
-                containerColor = Color(0xFF0D1117).copy(alpha = 0.95f),
-                contentColor = Color.White
-            ) {
-                tabs.forEach { (route, icon, label) ->
-                    val selected = currentDestination?.hierarchy?.any { it.route == route.route } == true
-                    NavigationBarItem(
-                        selected = selected,
-                        onClick = {
-                            navController.navigate(route.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
+            if (showBottomBar) {
+                NavigationBar(
+                    containerColor = Color(0xFF0D1117).copy(alpha = 0.95f),
+                    contentColor = Color.White
+                ) {
+                    tabs.forEach { (route, icon, label) ->
+                        val selected =
+                            currentDestination?.hierarchy?.any { it.route == route.route } == true
+                        NavigationBarItem(
+                            selected = selected,
+                            onClick = {
+                                navController.navigate(route.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        icon = {
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = label,
-                                tint = if (selected) NeonCyan else Color.White.copy(alpha = 0.5f)
+                            },
+                            icon = {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = label,
+                                    tint = if (selected) NeonCyan else Color.White.copy(alpha = 0.5f)
+                                )
+                            },
+                            label = {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (selected) NeonCyan else Color.White.copy(alpha = 0.5f)
+                                )
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = NeonCyan,
+                                indicatorColor = NeonPurple.copy(alpha = 0.2f)
                             )
-                        },
-                        label = {
-                            Text(
-                                text = label,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (selected) NeonCyan else Color.White.copy(alpha = 0.5f)
-                            )
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = NeonCyan,
-                            indicatorColor = NeonPurple.copy(alpha = 0.2f)
                         )
-                    )
+                    }
                 }
             }
         }
@@ -112,7 +121,18 @@ fun MainNavigation(viewModel: ChatViewModel) {
             composable(AppRoute.Insights.route) { InsightsScreen(viewModel = viewModel) }
             composable(AppRoute.Goals.route) { GoalsScreen(viewModel = viewModel) }
             composable(AppRoute.Evaluation.route) { EvaluationScreen(viewModel = viewModel) }
-            composable(AppRoute.Settings.route) { SettingsScreen(viewModel = viewModel) }
+            composable(AppRoute.Settings.route) {
+                SettingsScreen(
+                    viewModel = viewModel,
+                    onNavigateToHfLogin = { navController.navigate(AppRoute.HfLogin.route) }
+                )
+            }
+            composable(AppRoute.HfLogin.route) {
+                HuggingFaceLoginScreen(
+                    viewModel = viewModel,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
         }
     }
 }

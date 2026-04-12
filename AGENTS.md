@@ -3,13 +3,14 @@
 - This project is an offline Android assistant: Compose UI + Hilt DI + Room memory + Camera/MediaPipe signals + JNI LLM inference.
 - Start by reading `README.md`, then `app/src/main/java/com/example/emotionawareai/ui/ChatViewModel.kt` (runtime orchestrator).
 ## Architecture Map (What Talks to What)
-- UI layer: `MainActivity.kt` requests camera/audio permissions, gates boot flow (`SplashScreen` -> `LlmSetupScreen` -> `LoginScreen`), then hosts tabbed `ui/navigation/AppNavigation.kt` (`ChatScreen`, `DiaryScreen`, `InsightsScreen`, `GoalsScreen`, `EvaluationScreen`, `SettingsScreen`).
+- UI layer: `MainActivity.kt` requests camera/audio permissions, gates boot flow (`SplashScreen` -> `LlmSetupScreen` -> `LoginScreen`), then hosts tabbed `ui/navigation/AppNavigation.kt` via `MainNavigation` (`ChatScreen`, `DiaryScreen`, `InsightsScreen`, `GoalsScreen`, `EvaluationScreen`, `SettingsScreen`).
 - State/orchestration: `ui/ChatViewModel.kt` owns session state, message list, generation lifecycle, and permission-triggered analyzer init.
 - Managers: `manager/ConversationManager.kt` builds prompt context; `manager/ResponseEngine.kt` streams model output + optional TTS (system/neural fallback); `manager/MemoryManager.kt` wraps repository/preferences helpers; `manager/InsightsGenerator.kt` computes weekly insight summaries.
+- Security/billing boundaries: `security/SecureTokenStorage.kt` persists HuggingFace tokens in `EncryptedSharedPreferences`; `billing/BillingManager.kt` exposes Play Billing readiness/offers/purchases consumed by `ui/ChatViewModel.kt`.
 - Data layer: `domain/repository/ConversationRepository.kt` maps Room entities <-> domain models and controls active conversation preference.
 - Persistence: Room DB in `data/database/*` + entities in `data/model/*`; DB is provided in `di/AppModule.kt` with `addMigrations(...)` and `fallbackToDestructiveMigration()`.
 - Inference boundary: `engine/LLMEngine.kt` wraps JNI (`app/src/main/cpp/llm_engine.cpp`, `CMakeLists.txt`).
-- Startup download boundary: `EmotionAwareApp.kt` triggers `engine/ModelDownloader.kt` in `Application.onCreate`; `ChatViewModel` observes downloader state and loads model when available.
+- Startup download boundary: `EmotionAwareApp.kt` restores saved HuggingFace token and auto-starts `engine/ModelDownloader.kt` only when LLM setup is already complete; `ChatViewModel` observes downloader state and loads model when available.
 ## End-to-End Data Flow
 - Text path: `ChatScreen` -> `ChatViewModel.sendMessage` -> `ConversationManager.buildContext` -> `ConversationContext.buildPrompt()` -> `ResponseEngine.generateResponse()` -> `LLMEngine.generateResponse()` -> UI token updates + `ConversationManager.saveMessage` -> Langfuse trace/evaluation (`evaluation/*`).
 - Voice path: `voice/VoiceProcessor.kt` emits recognized text via `recognizedTextFlow`; ViewModel forwards it into `sendMessage` and handles continuous-mode restart/error flows.
@@ -19,7 +20,8 @@
 - Recent-message ordering is intentional: DAO returns DESC, repository reverses to chronological (`ConversationRepository.getRecentMessages`).
 - In `ChatViewModel.sendMessage`, context is built before saving the current user message; preserve this ordering to avoid duplicating the same turn in both `[CONTEXT]` and `[USER]`.
 - Emotion/activity detectors rate-limit internally (`MAX_FPS` and `FRAME_INTERVAL_MS`) and publish via `SharedFlow` with replay/drop-oldest.
-- Model download starts at process startup (`EmotionAwareApp.onCreate`); setup/load state is driven by `ChatViewModel.initializeSession` + `ModelDownloader` flows, and UI shows stub mode when not loaded (`ChatScreen` top bar).
+- Model download auto-start in `EmotionAwareApp.onCreate` is conditional on `MemoryManager.isLlmSetupComplete()`; setup/load state is driven by `ChatViewModel.initializeSession` + `ModelDownloader` flows, and UI shows stub mode when not loaded (`ChatScreen` top bar).
+- Premium features are currently free-by-default: `ChatViewModel` builds the feature matrix from `_premiumFeaturesGloballyEnabled` (default `true`), and `setPremiumFeaturesEnabled(false)` acts as a global kill-switch.
 - Native layer currently ships a stub word-by-word callback in `llm_engine.cpp`; Kotlin currently re-emits one combined chunk in `LLMEngine.generateResponse`.
 ## Build/Test/Release Workflows
 - Local debug build: `./gradlew assembleDebug`
@@ -31,6 +33,7 @@
 - Release signing reads env vars in `app/build.gradle.kts`: `KEYSTORE_FILE`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`, `KEYSTORE_TYPE`.
 ## Integration Notes and Change Traps
 - MediaPipe assets are expected by code (`face_landmarker.task`, `pose_landmarker_lite.task` in analyzers) under `app/src/main/assets/`; ensure they are provisioned locally before camera analysis.
+- Neural TTS assets are stored in app-private `files/tts/piper/` (`tts/PiperVoiceManager.kt`); if Sherpa-ONNX/Piper voice validation or init fails, `ResponseEngine` automatically falls back to Android system TTS.
 - `ChatViewModel` constructor dependencies are tightly coupled to tests; when adding/removing deps, update tests in `app/src/test` and `app/src/androidTest` mocks.
 - If changing camera frame handling, preserve bitmap ownership rules (`processBitmapFrame` does not recycle shared bitmaps).
 - If changing schema/entities, plan migration strategy; current setup includes explicit migrations plus destructive fallback, so version changes can still wipe local DB when migration coverage is incomplete.

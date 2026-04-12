@@ -1,6 +1,7 @@
 package com.example.emotionawareai.engine
 
 import android.content.Context
+import android.os.PowerManager
 import android.util.Log
 import com.example.emotionawareai.domain.model.LlmOption
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -40,6 +41,7 @@ class ModelDownloader @Inject constructor(
 
     @Volatile private var downloadJob: Job? = null
     @Volatile private var activeOption: LlmOption? = null
+    @Volatile private var wakeLock: PowerManager.WakeLock? = null
 
     /**
      * Optional HuggingFace access token.
@@ -125,6 +127,7 @@ class ModelDownloader @Inject constructor(
         activeOption = null
         _isDownloading.value = false
         _downloadProgress.value = null
+        releaseWakeLock()
         Log.i(TAG, "Model download cancelled")
     }
 
@@ -134,6 +137,7 @@ class ModelDownloader @Inject constructor(
             _downloadFailed.value = false
             _isDownloading.value = true
             _downloadProgress.value = 0f
+            acquireWakeLock(option)
             try {
                 val success = downloadBlocking(option) { progress ->
                     _downloadProgress.value = progress
@@ -146,8 +150,30 @@ class ModelDownloader @Inject constructor(
                 activeOption = null
                 _isDownloading.value = false
                 _downloadProgress.value = null
+                releaseWakeLock()
             }
         }
+    }
+
+    private fun acquireWakeLock(option: LlmOption) {
+        val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
+        val lock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "EmotionAwareAI:ModelDownload")
+        lock.setReferenceCounted(false)
+        runCatching {
+            lock.acquire(WAKE_LOCK_TIMEOUT_MS)
+            wakeLock = lock
+            Log.i(TAG, "Acquired wake lock for ${option.name} download")
+        }.onFailure { e ->
+            Log.w(TAG, "Failed to acquire wake lock: ${e.message}")
+        }
+    }
+
+    private fun releaseWakeLock() {
+        val lock = wakeLock ?: return
+        runCatching {
+            if (lock.isHeld) lock.release()
+        }
+        wakeLock = null
     }
 
     // ── Suspend helpers (also usable from callers with their own scope) ───────
@@ -337,6 +363,7 @@ class ModelDownloader @Inject constructor(
         private const val READ_TIMEOUT_MS = 60_000
         private const val BUFFER_SIZE = 32 * 1024
         private const val MAX_REDIRECTS = 10
+        private const val WAKE_LOCK_TIMEOUT_MS = 12 * 60 * 60 * 1000L
     }
 
     /**

@@ -1,8 +1,6 @@
 package com.example.emotionawareai.ui.screen
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.EaseInOut
-import androidx.compose.animation.core.EaseOutBack
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -12,12 +10,10 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -30,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -48,107 +45,102 @@ import kotlin.math.sin
 
 /**
  * Animated boot splash screen displayed for ~3 seconds on app launch.
- *
- * Features:
- * - Deep gradient background with floating particle animation
- * - Banner image (splash_banner) that scales up with spring-like easing
- * - Pulsating glow ring evoking a heartbeat / emotional-awareness theme
- * - Tagline that fades in gracefully
- *
- * After the hold duration [onFinished] is invoked to advance navigation.
+ * Uses only `boot_background.png` plus lightweight Compose-drawn overlays.
  */
 @Composable
 fun SplashScreen(onFinished: () -> Unit) {
+    val titleAlpha = remember { Animatable(0f) }
+    val subtitleAlpha = remember { Animatable(0f) }
+    val titleOffsetY = remember { Animatable(24f) }
 
-    // ── Animatable values ────────────────────────────────────────────────────
-
-    val bannerAlpha = remember { Animatable(0f) }
-    val bannerScale = remember { Animatable(0.7f) }
-    val taglineAlpha = remember { Animatable(0f) }
-    val bannerOffsetY = remember { Animatable(40f) }
-
-    // Infinite pulsating glow
+    // Gentle cinematic movement for the background image.
     val infiniteTransition = rememberInfiniteTransition(label = "splash_pulse")
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 0.95f,
-        targetValue = 1.08f,
+    val bgScale by infiniteTransition.animateFloat(
+        initialValue = 1.04f,
+        targetValue = 1.12f,
         animationSpec = infiniteRepeatable(
-            animation = tween(900, easing = EaseInOut),
+            animation = tween(4_200, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "pulse"
+        label = "bg_scale"
+    )
+    val bgOffsetX by infiniteTransition.animateFloat(
+        initialValue = -18f,
+        targetValue = 18f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(5_800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "bg_offset_x"
+    )
+    val particlePhase by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(11_000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "particles"
     )
     val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.15f,
-        targetValue = 0.45f,
+        initialValue = 0.22f,
+        targetValue = 0.52f,
         animationSpec = infiniteRepeatable(
-            animation = tween(900, easing = EaseInOut),
+            animation = tween(1_600, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "glow"
     )
 
-    // Floating particles
-    val particlePhase by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(12_000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "particles"
-    )
-
-    // ── Animation timeline ───────────────────────────────────────────────────
-
     LaunchedEffect(Unit) {
-        // Banner entrance
-        bannerAlpha.animateTo(1f, tween(800, easing = FastOutSlowInEasing))
-    }
-    LaunchedEffect(Unit) {
-        bannerScale.animateTo(1f, tween(1000, easing = EaseOutBack))
-    }
-    LaunchedEffect(Unit) {
-        bannerOffsetY.animateTo(0f, tween(1000, easing = FastOutSlowInEasing))
-    }
-    LaunchedEffect(Unit) {
-        delay(600)
-        taglineAlpha.animateTo(1f, tween(700, easing = FastOutSlowInEasing))
-    }
-    LaunchedEffect(Unit) {
+        titleAlpha.animateTo(1f, tween(820, easing = FastOutSlowInEasing))
+        titleOffsetY.animateTo(0f, tween(820, easing = FastOutSlowInEasing))
+        delay(180)
+        subtitleAlpha.animateTo(1f, tween(700, easing = FastOutSlowInEasing))
         delay(3000)
         onFinished()
     }
 
-    // ── UI ────────────────────────────────────────────────────────────────────
-
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFF050A18),
-                        Color(0xFF0D1B2A),
-                        Color(0xFF0A0F1E)
-                    )
-                )
-            ),
+        modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        // Floating particles background
+        Image(
+            painter = painterResource(id = R.drawable.boot_background),
+            contentDescription = "Splash background",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxSize()
+                .scale(bgScale)
+                .offset(x = bgOffsetX.dp)
+        )
+
+        // Soft dark gradient to keep text legible on bright background regions.
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color.Black.copy(alpha = 0.42f),
+                        Color.Black.copy(alpha = 0.28f),
+                        Color.Black.copy(alpha = 0.58f)
+                    )
+                )
+            )
+        }
+
+        // Floating particles overlay for motion depth.
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
-            val particleCount = 18
+            val particleCount = 20
             for (i in 0 until particleCount) {
                 val angle = Math.toRadians((particlePhase + i * (360.0 / particleCount)) % 360.0)
-                val radiusX = w * 0.3f + (i % 3) * w * 0.08f
-                val radiusY = h * 0.25f + (i % 4) * h * 0.06f
+                val radiusX = w * 0.28f + (i % 4) * w * 0.06f
+                val radiusY = h * 0.22f + (i % 3) * h * 0.08f
                 val cx = w / 2 + radiusX * cos(angle).toFloat()
                 val cy = h / 2 + radiusY * sin(angle).toFloat()
-                val particleAlpha = 0.12f + (i % 5) * 0.06f
-                val particleRadius = 1.5f + (i % 4) * 1.2f
+                val particleAlpha = 0.08f + (i % 5) * 0.04f
+                val particleRadius = 1.4f + (i % 4) * 1.1f
                 val color = if (i % 2 == 0) NeonCyan else NeonPurple
                 drawCircle(
                     color = color.copy(alpha = particleAlpha),
@@ -158,104 +150,53 @@ fun SplashScreen(onFinished: () -> Unit) {
             }
         }
 
-        // Pulsating glow ring behind the banner
+        // Glow beam behind title.
         Canvas(
             modifier = Modifier
-                .fillMaxWidth(0.75f)
-                .height(200.dp)
-                .scale(pulseScale)
+                .fillMaxSize()
                 .alpha(glowAlpha)
         ) {
-            val center = Offset(size.width / 2, size.height / 2)
-            drawCircle(
+            val center = Offset(size.width / 2, size.height * 0.58f)
+            drawRoundRect(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        NeonCyan.copy(alpha = 0.5f),
-                        NeonPurple.copy(alpha = 0.3f),
+                        NeonCyan.copy(alpha = 0.34f),
+                        NeonPurple.copy(alpha = 0.22f),
                         Color.Transparent
                     ),
                     center = center,
-                    radius = size.width * 0.45f
+                    radius = size.width * 0.62f
                 ),
-                center = center,
-                radius = size.width * 0.45f
+                topLeft = Offset(size.width * 0.12f, size.height * 0.45f),
+                size = androidx.compose.ui.geometry.Size(size.width * 0.76f, size.height * 0.26f),
+                cornerRadius = CornerRadius(size.width * 0.18f, size.width * 0.18f)
             )
         }
 
-        // Main content column
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .padding(horizontal = 32.dp)
-                .offset(y = bannerOffsetY.value.dp),
+                .offset(y = titleOffsetY.value.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Banner image with scale + fade animation
-            Image(
-                painter = painterResource(id = R.drawable.splash_banner),
-                contentDescription = "SensEAI Labs banner",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .alpha(bannerAlpha.value)
-                    .scale(bannerScale.value),
-                contentScale = ContentScale.FillWidth
-            )
-
-            Spacer(modifier = Modifier.height(28.dp))
-
-            // Tagline
             Text(
-                text = "Your Emotional Wellness Companion",
-                color = NeonCyan.copy(alpha = taglineAlpha.value),
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium,
+                text = "Emotion Aware AI",
+                color = Color.White.copy(alpha = titleAlpha.value),
+                fontSize = 34.sp,
+                fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center,
-                letterSpacing = 1.5.sp
+                letterSpacing = 1.2.sp
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             Text(
-                text = "powered by on-device AI",
-                color = Color.White.copy(alpha = taglineAlpha.value * 0.5f),
-                fontSize = 12.sp,
+                text = "offline emotional assistant",
+                color = NeonCyan.copy(alpha = subtitleAlpha.value),
+                fontSize = 14.sp,
                 fontWeight = FontWeight.Normal,
                 textAlign = TextAlign.Center,
-                letterSpacing = 1.sp
-            )
-        }
-
-        // Heartbeat line at the bottom
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(60.dp)
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 40.dp)
-                .alpha(bannerAlpha.value)
-        ) {
-            val w = size.width
-            val midY = size.height / 2
-            val path = androidx.compose.ui.graphics.Path().apply {
-                moveTo(0f, midY)
-                // flat line
-                lineTo(w * 0.25f, midY)
-                // heartbeat spike
-                lineTo(w * 0.32f, midY - size.height * 0.35f)
-                lineTo(w * 0.38f, midY + size.height * 0.25f)
-                lineTo(w * 0.44f, midY - size.height * 0.15f)
-                lineTo(w * 0.50f, midY)
-                // flat line continuation
-                lineTo(w, midY)
-            }
-            drawPath(
-                path = path,
-                color = NeonCyan.copy(alpha = 0.6f * bannerAlpha.value),
-                style = androidx.compose.ui.graphics.drawscope.Stroke(
-                    width = 2.dp.toPx(),
-                    cap = androidx.compose.ui.graphics.StrokeCap.Round,
-                    join = androidx.compose.ui.graphics.StrokeJoin.Round
-                )
+                letterSpacing = 2.sp
             )
         }
     }

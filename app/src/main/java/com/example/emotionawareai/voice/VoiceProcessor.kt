@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -45,6 +46,13 @@ class VoiceProcessor @Inject constructor(
     @Volatile
     private var isRestarting = false
 
+    /** Last known recognizer readiness state (set by recognition callbacks). */
+    @Volatile
+    private var isRecognizerActive = false
+
+    @Volatile
+    private var lastStartRequestElapsedMs = 0L
+
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val _recognizedTextFlow = MutableSharedFlow<String>(
@@ -74,6 +82,7 @@ class VoiceProcessor @Inject constructor(
     private val recognitionListener = object : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) {
             isRestarting = false
+            isRecognizerActive = true
             _listeningStateFlow.tryEmit(true)
             Log.d(TAG, "Ready for speech")
         }
@@ -89,11 +98,13 @@ class VoiceProcessor @Inject constructor(
         override fun onBufferReceived(buffer: ByteArray?) { /* ignored */ }
 
         override fun onEndOfSpeech() {
+            isRecognizerActive = false
             _listeningStateFlow.tryEmit(false)
             Log.d(TAG, "Speech ended")
         }
 
         override fun onError(error: Int) {
+            isRecognizerActive = false
             _listeningStateFlow.tryEmit(false)
             val voiceError = VoiceError.fromCode(error)
 
@@ -105,6 +116,8 @@ class VoiceProcessor @Inject constructor(
                 isRestarting = false
                 val delayMs = if (voiceError == VoiceError.CLIENT_ERROR) {
                     CLIENT_ERROR_RESTART_DELAY_MS
+                } else if (voiceError == VoiceError.RECOGNIZER_BUSY) {
+                    BUSY_ERROR_RESTART_DELAY_MS
                 } else {
                     RESTART_DELAY_MS
                 }
@@ -119,6 +132,7 @@ class VoiceProcessor @Inject constructor(
 
         override fun onResults(results: Bundle?) {
             isRestarting = false
+            isRecognizerActive = false
             _listeningStateFlow.tryEmit(false)
             val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             val topResult = matches?.firstOrNull()
@@ -158,18 +172,11 @@ class VoiceProcessor @Inject constructor(
             _errorFlow.tryEmit(VoiceError.NOT_AVAILABLE)
             return
         }
-
-        activeLocale = locale
-        mainHandler.removeCallbacksAndMessages(RESTART_TOKEN)
-        destroyCurrentRecognizer()
-
-        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
-            setRecognitionListener(recognitionListener)
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            startListeningInternal(locale, forceRestart = false)
+        } else {
+            mainHandler.post { startListeningInternal(locale, forceRestart = false) }
         }
-
-        val intent = buildRecognitionIntent(locale)
-        speechRecognizer?.startListening(intent)
-        Log.i(TAG, "Started listening (continuous=$isContinuousMode)")
     }
 
     /**
@@ -196,6 +203,7 @@ class VoiceProcessor @Inject constructor(
      */
     fun stopListening() {
         isRestarting = false
+        isRecognizerActive = false
         mainHandler.removeCallbacksAndMessages(RESTART_TOKEN)
         destroyCurrentRecognizer()
         _listeningStateFlow.tryEmit(false)
@@ -204,6 +212,7 @@ class VoiceProcessor @Inject constructor(
     fun release() {
         isContinuousMode = false
         isRestarting = false
+        isRecognizerActive = false
         mainHandler.removeCallbacksAndMessages(RESTART_TOKEN)
         destroyCurrentRecognizer()
     }
@@ -245,15 +254,45 @@ class VoiceProcessor @Inject constructor(
             if (!isContinuousMode) {
                 isRestarting = false
             } else {
-                startListening(activeLocale)
+                startListeningInternal(activeLocale, forceRestart = true)
             }
         }, RESTART_TOKEN, delayMs)
+    }
+
+    @android.annotation.SuppressLint("MissingPermission")
+    private fun startListeningInternal(locale: Locale, forceRestart: Boolean) {
+        val now = SystemClock.elapsedRealtime()
+        val sameLocale = activeLocale == locale
+        if (!forceRestart && sameLocale && speechRecognizer != null && (isRecognizerActive || isRestarting)) {
+            Log.d(TAG, "Ignoring duplicate start request while recognizer is already active")
+            return
+        }
+        if (!forceRestart && now - lastStartRequestElapsedMs < START_DEBOUNCE_MS) {
+            Log.d(TAG, "Ignoring rapid start request (${now - lastStartRequestElapsedMs}ms since previous)")
+            return
+        }
+
+        lastStartRequestElapsedMs = now
+        activeLocale = locale
+        mainHandler.removeCallbacksAndMessages(RESTART_TOKEN)
+        isRecognizerActive = false
+        destroyCurrentRecognizer()
+
+        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
+            setRecognitionListener(recognitionListener)
+        }
+
+        val intent = buildRecognitionIntent(locale)
+        speechRecognizer?.startListening(intent)
+        Log.i(TAG, "Started listening (continuous=$isContinuousMode, forced=$forceRestart)")
     }
 
     companion object {
         private const val TAG = "VoiceProcessor"
         private const val RESTART_DELAY_MS = 300L
         private const val CLIENT_ERROR_RESTART_DELAY_MS = 600L
+        private const val BUSY_ERROR_RESTART_DELAY_MS = 900L
+        private const val START_DEBOUNCE_MS = 450L
         private val RESTART_TOKEN = Any()
     }
 }
@@ -262,12 +301,14 @@ class VoiceProcessor @Inject constructor(
 internal fun VoiceError.shouldSilentlyRecoverInContinuousMode(isRestarting: Boolean): Boolean =
     this == VoiceError.NO_MATCH ||
         this == VoiceError.SPEECH_TIMEOUT ||
-        this == VoiceError.CLIENT_ERROR
+        this == VoiceError.CLIENT_ERROR ||
+        this == VoiceError.RECOGNIZER_BUSY
 
 val VoiceError.isBenignForContinuousMode: Boolean
     get() = this == VoiceError.NO_MATCH ||
         this == VoiceError.SPEECH_TIMEOUT ||
-        this == VoiceError.CLIENT_ERROR
+        this == VoiceError.CLIENT_ERROR ||
+        this == VoiceError.RECOGNIZER_BUSY
 
 enum class VoiceError(val message: String) {
     AUDIO_ERROR("Audio recording error"),

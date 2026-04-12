@@ -90,7 +90,10 @@ import com.example.emotionawareai.ui.theme.NeonRose
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(viewModel: ChatViewModel) {
+fun SettingsScreen(
+    viewModel: ChatViewModel,
+    onNavigateToHfLogin: () -> Unit = {}
+) {
     val isTtsEnabled by viewModel.isTtsEnabled.collectAsStateWithLifecycle()
     val ttsVoiceProfile by viewModel.ttsVoiceProfile.collectAsStateWithLifecycle()
     val ttsBackend by viewModel.ttsBackend.collectAsStateWithLifecycle()
@@ -121,6 +124,9 @@ fun SettingsScreen(viewModel: ChatViewModel) {
     var showDeleteDialog by remember { mutableStateOf(false) }
     val selectedModel = remember(selectedLlmId) {
         LlmOption.fromId(selectedLlmId) ?: LlmOption.CONFIGURED_MODEL
+    }
+    val llmOptionsWithCompatibility = remember {
+        viewModel.getAllLlmOptionsWithCompatibility()
     }
 
     // File picker launcher: accepts any file type so users can select .gguf files
@@ -280,6 +286,70 @@ fun SettingsScreen(viewModel: ChatViewModel) {
                         }
                         HorizontalDivider(color = GlassBorder)
 
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "Choose a model",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.7f)
+                            )
+                            llmOptionsWithCompatibility.forEach { (option, compatibility) ->
+                                val tokenRequired = option.requiresHuggingFaceToken
+                                val tokenMissing = tokenRequired && huggingFaceToken.isBlank()
+                                val isSelected = option.id == selectedModel.id
+                                val rowEnabled = !isModelDownloading && !tokenMissing
+                                val subtitle = buildString {
+                                    append("${option.parameterLabel.ifBlank { option.sizeLabel }} • ${compatibility.label}")
+                                    if (compatibility.isRecommended) append(" • Recommended")
+                                    if (tokenMissing) append(" • Add HuggingFace token")
+                                }
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(
+                                            if (isSelected) NeonCyan.copy(alpha = 0.12f)
+                                            else Color.Transparent
+                                        )
+                                        .border(
+                                            width = 1.dp,
+                                            color = if (isSelected) NeonCyan.copy(alpha = 0.6f) else GlassBorder,
+                                            shape = RoundedCornerShape(12.dp)
+                                        )
+                                        .clickable(enabled = rowEnabled) { viewModel.changeLlmFromSettings(option) }
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = option.name,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = if (rowEnabled) Color.White else Color.White.copy(alpha = 0.45f),
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Text(
+                                            text = subtitle,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (tokenMissing) NeonRose else Color.White.copy(alpha = 0.58f)
+                                        )
+                                    }
+                                    if (isSelected) {
+                                        Icon(
+                                            Icons.Filled.CheckCircle,
+                                            contentDescription = null,
+                                            tint = NeonCyan,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        HorizontalDivider(color = GlassBorder)
+
                         // Failure banner: shown when download failed and agent is inactive
                         if (isModelDownloadFailed && !isModelLoaded) {
                             Row(
@@ -423,7 +493,8 @@ fun SettingsScreen(viewModel: ChatViewModel) {
                 item {
                     HuggingFaceTokenCard(
                         savedToken = huggingFaceToken,
-                        onSave = { token -> viewModel.setHuggingFaceToken(token) }
+                        onSave = { token -> viewModel.setHuggingFaceToken(token) },
+                        onLoginWithHuggingFace = onNavigateToHfLogin
                     )
                 }
 
@@ -950,7 +1021,8 @@ private fun PiperVoiceStatusCard(
 @Composable
 private fun HuggingFaceTokenCard(
     savedToken: String,
-    onSave: (String) -> Unit
+    onSave: (String) -> Unit,
+    onLoginWithHuggingFace: () -> Unit = {}
 ) {
     var draftToken by remember(savedToken) { mutableStateOf(savedToken) }
     var tokenVisible by remember { mutableStateOf(false) }
@@ -1040,6 +1112,30 @@ private fun HuggingFaceTokenCard(
             shape = RoundedCornerShape(10.dp),
             textStyle = MaterialTheme.typography.bodySmall
         )
+
+        // ── Login with HuggingFace button ────────────────────────────────────────
+        Button(
+            onClick = onLoginWithHuggingFace,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = NeonPurple.copy(alpha = 0.3f)
+            ),
+            shape = RoundedCornerShape(10.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Key,
+                contentDescription = null,
+                tint = NeonCyan,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(Modifier.size(8.dp))
+            Text(
+                "Login with HuggingFace",
+                color = NeonCyan,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
 
         Row(
             modifier = Modifier.fillMaxWidth(),

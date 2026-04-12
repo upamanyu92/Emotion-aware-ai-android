@@ -28,6 +28,12 @@ class VoiceProcessorLogicTest {
     }
 
     @Test
+    fun `recognizer busy is silently recovered in continuous mode`() {
+        assertTrue(VoiceError.RECOGNIZER_BUSY.shouldSilentlyRecoverInContinuousMode(isRestarting = true))
+        assertTrue(VoiceError.RECOGNIZER_BUSY.isBenignForContinuousMode)
+    }
+
+    @Test
     fun `other voice errors are not silently recovered`() {
         assertFalse(VoiceError.AUDIO_ERROR.shouldSilentlyRecoverInContinuousMode(isRestarting = true))
         assertFalse(VoiceError.NETWORK_ERROR.shouldSilentlyRecoverInContinuousMode(isRestarting = true))
