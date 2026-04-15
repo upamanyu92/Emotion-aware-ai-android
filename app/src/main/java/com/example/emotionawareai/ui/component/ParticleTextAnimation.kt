@@ -50,6 +50,7 @@ import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlin.random.Random
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -218,8 +219,8 @@ fun ParticleTextAnimation(
                     canvasSizeH = size.height
                 }
         ) {
-            // Reading `tick` here subscribes this draw scope to frame updates
-            @Suppress("UNUSED_VARIABLE") val unused = tick
+            // Subscribes this draw scope to frame-tick updates so it redraws each frame
+            tick.let { }
             if (!state.initialized) return@Canvas
 
             val w = size.width
@@ -329,8 +330,8 @@ private fun sampleTextTargets(text: String, w: Int, h: Int, n: Int): FloatArray 
     for (y in 0 until h step step) {
         for (x in 0 until w step step) {
             if ((pixels[y * w + x] ushr 24) and 0xFF > 120) {
-                raw.add(x - w / 2f + (Math.random() * 0.8 - 0.4).toFloat())
-                raw.add(y - h / 2f + (Math.random() * 0.8 - 0.4).toFloat())
+                raw.add(x - w / 2f + (Random.nextFloat() * 0.8f - 0.4f))
+                raw.add(y - h / 2f + (Random.nextFloat() * 0.8f - 0.4f))
             }
         }
     }
@@ -339,7 +340,7 @@ private fun sampleTextTargets(text: String, w: Int, h: Int, n: Int): FloatArray 
     val pairCount = raw.size / 2
     val arr = raw.toFloatArray()
     for (i in pairCount - 1 downTo 1) {
-        val j = (Math.random() * (i + 1)).toInt()
+        val j = Random.nextInt(i + 1)
         val tmpX = arr[i * 2]; val tmpY = arr[i * 2 + 1]
         arr[i * 2] = arr[j * 2]; arr[i * 2 + 1] = arr[j * 2 + 1]
         arr[j * 2] = tmpX; arr[j * 2 + 1] = tmpY
