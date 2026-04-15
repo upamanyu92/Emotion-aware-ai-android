@@ -98,7 +98,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.emotionawareai.R
 import com.example.emotionawareai.domain.model.Emotion
 import com.example.emotionawareai.ui.ChatViewModel
-import com.example.emotionawareai.ui.component.AgentPresenceAnimation
+import com.example.emotionawareai.ui.component.ParticleTextAnimation
 import com.example.emotionawareai.ui.component.DailyCheckInSheet
 import com.example.emotionawareai.ui.component.EmotionIndicator
 import com.example.emotionawareai.ui.component.PrivacyNoticeDialog
@@ -462,7 +462,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                AgentPresenceAnimation(
+                ParticleTextAnimation(
                     isListening = isListening,
                     isGenerating = isGenerating,
                     isSpeaking = isSpeaking,
